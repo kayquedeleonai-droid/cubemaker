@@ -105,7 +105,7 @@ async function loadWeapon({ md3Buf, cfgText, skinImages, weaponName, project, sk
   m.surfaces.forEach(computeIslands);
   meshes.forEach(x => { root.remove(x); x.geometry.dispose(); x.material.dispose(); });
   skins.forEach(sk => sk.texture && sk.texture.dispose());
-  model = m; meshes = []; skins = [];
+  model = m; m.nfOrig = m.nf; meshes = []; skins = [];
   S.originalMD3 = md3Buf; S.cfg = (cfgText || defaultCfg(m)).replace(/\r\n/g, '\n'); S.weapon = weaponName || S.weapon;
   S.originalCfg = cfgText || null; S.skinSources = skinSources || [];
   S.islandMat = m.surfaces.map(() => new Map()); S.groups = []; S.gi = -1; S.sel = { si: -1, isl: new Set() };
@@ -138,6 +138,7 @@ async function loadWeapon({ md3Buf, cfgText, skinImages, weaponName, project, sk
   if (project) { (project.prims || []).forEach(p => addPrimitive(p, { silent: true, noGroup: true })); applyProject(project); }
   else skins.forEach((_, i) => composite(i));
   $('#weaponName').value = S.weapon; $('#cfgText').value = S.cfg;
+  if (!project) applyRig({ silent: true });
   updateAll(); frameCamera('orbit');
   toast(`Carregado: ${S.weapon} — ${m.surfaces.length} partes, ${m.nf} quadros`, 'ok');
 }
@@ -707,12 +708,12 @@ function setFrameCount(n, silent) {
   n = clamp(n | 0, 1, 256);
   const old = model.nf; if (n === old) return;
   model.surfaces.forEach(s => {
-    while (s.pos.length < n) { s.pos.push(new Float32Array(s.pos[old - 1])); s.nrm.push(new Float32Array(s.nrm[old - 1])); s.nraw.push(new Uint16Array(s.nraw[old - 1])); }
+    while (s.pos.length < n) { s.pos.push(new Float32Array(s.pos[0])); s.nrm.push(new Float32Array(s.nrm[0])); s.nraw.push(new Uint16Array(s.nraw[0])); }
     s.pos.length = n; s.nrm.length = n; s.nraw.length = n;
   });
-  while (model.frames.length < n) model.frames.push({ ...model.frames[old - 1], name: 'frame' + model.frames.length });
+  while (model.frames.length < n) model.frames.push({ ...model.frames[0], name: 'frame' + model.frames.length });
   model.frames.length = n;
-  while (model.tags.length < n) model.tags.push(JSON.parse(JSON.stringify(model.tags[old - 1])));
+  while (model.tags.length < n) model.tags.push(JSON.parse(JSON.stringify(model.tags[0])));
   model.tags.length = n;
   model.nf = n;
   S.groups.forEach(g => Object.keys(g.keys).forEach(k => { if (+k >= n) delete g.keys[k]; }));
@@ -846,6 +847,16 @@ function muzzle() { const t = model.tagNames.length ? model.tags[0][0].origin : 
 function assembleClips(nIdle, nShoot, nReload) {
   nIdle = clamp(nIdle | 0, 1, 64); nShoot = clamp(nShoot | 0, 1, 64); nReload = clamp(nReload | 0, 1, 128);
   snapshot('montar clipes');
+  if (hasBakedAnim()) {               // quadros originais já animados: não embaralha, só acrescenta a recarga no fim
+    const rl = clip(/reload/i);
+    if ((rl && rl[1] > rl[0]) || nReload <= 1) { updateAll(); return; }
+    const start = model.nf; setFrameCount(model.nf + nReload, true);
+    const lines = S.cfg.split('\n').filter(l => !/^\s*md3anim\s+"gun reload"/i.test(l));
+    let at = -1; lines.forEach((l, i) => { if (/^\s*md3anim/i.test(l)) at = i; });
+    lines.splice(at + 1, 0, `md3anim "gun reload" ${start} ${nReload}`);
+    S.cfg = lines.join('\n'); $('#cfgText').value = S.cfg;
+    updateAll(); toast(`Animação original preservada · recarga nova nos quadros ${start}–${start + nReload - 1}`, 'ok'); return;
+  }
   const old = { idle: clip(/idle/i), shoot: clip(/shoot/i), reload: clip(/reload/i) };
   const nw = { idle: [0, nIdle - 1], shoot: [nIdle, nIdle + nShoot - 1], reload: [nIdle + nShoot, nIdle + nShoot + nReload - 1] };
   // remapeia chaves já existentes para os novos intervalos (proporcional)
@@ -886,8 +897,8 @@ const GEN = {
     clearKeys(g, a, b);
     setKey(g, a, {}); setKey(g, Math.min(b, a + Math.max(1, Math.round((b - a) * 0.3))), { t: ax.map(v => v * dist), e: 'out' }); setKey(g, b, { e: 'smooth' });
   },
-  trigger() {
-    const g = S.groups[groupByName(/gatilho|trigger/i)]; if (!g) return toast('Crie um grupo chamado "Gatilho"', 'warn');
+  trigger({ quiet = false } = {}) {
+    const g = S.groups[groupByName(/gatilho|trigger/i)]; if (!g) return quiet ? undefined : toast('Crie um grupo chamado "Gatilho"', 'warn');
     const [a, b] = clip(/shoot/i) || [0, model.nf - 1];
     clearKeys(g, a, b); setKey(g, a, {}); setKey(g, Math.min(b, a + 1), { r: [-14, 0, 0], e: 'out' }); setKey(g, b, {});
   },
@@ -966,7 +977,7 @@ const GEN = {
     setKey(g, F(0.84), { e: 'out' });                                 // abaixa
     setKey(S.root, F(0.3), {}); setKey(S.root, F(0.45), { t: [0.8, -0.5, 0.6], r: [2, 10, 0] }); setKey(S.root, F(0.8), { t: [0.6, -0.3, 0.4], r: [1, 8, 0] }); setKey(S.root, b, { e: 'smooth' });
   },
-  knife({ reach = 1 } = {}) {
+  knife({ reach = hasBakedAnim() ? 0.35 : 1 } = {}) {
     const [a, b] = clip(/shoot/i) || [0, model.nf - 1], L = b - a, F = p => a + Math.round(p * L);
     if (L < 5) return toast('O golpe precisa de pelo menos 6 quadros', 'warn');
     clearKeys(S.root, a, b);
@@ -988,7 +999,7 @@ const GEN = {
     setKey(g, a + 3 <= b ? a + 3 : b, { t: [0, dist, 0], s: 0, e: 'step' });
     return gi;
   },
-  grenade({ power = 1 } = {}) {
+  grenade({ power = 1, rootMotion = !hasBakedAnim() } = {}) {
     const c = clip(/shoot/i) || [0, model.nf - 1]; const [a, b] = c, L = b - a;
     if (L < 8) return toast('Arremesso precisa de pelo menos 9 quadros no "gun shoot". Use "Montar clipes".', 'warn');
     const F = p => a + Math.round(p * L);
@@ -999,6 +1010,7 @@ const GEN = {
     setKey(pin, F(0.22), { t: [5, -1, 2], r: [0, 0, 70], e: 'out' });
     setKey(pin, F(0.32), { t: [8, -3, -10], r: [90, 0, 200], e: 'in' });
     setKey(pin, F(0.34), { t: [8, -3, -10], s: 0, e: 'step' });
+    if (!rootMotion) return;
     clearKeys(S.root, a, b);
     setKey(S.root, a, {});
     setKey(S.root, F(0.2), { t: [0.5, -1.5, 1], r: [6, 0, -4] });
@@ -1021,12 +1033,12 @@ const GEN = {
 
 // ---- banco de animações por tipo de arma
 const ANIM_BANK = {
-  subgun:  { n: 'SMG (MP40 · Thompson · PPSh)', clips: [1, 8, 44], needs: 'Ferrolho, Carregador, Mão (opcional)', steps: [['recoil', { kick: 1.6, rise: 4, side: 0.8 }], ['bolt', { dist: 2.5 }], ['shell', {}], ['tracer', {}], ['reload', { tilt: 22 }]] },
-  assault: { n: 'Fuzil de assalto (StG 44)', clips: [1, 8, 48], needs: 'Ferrolho, Carregador', steps: [['recoil', { kick: 2.2, rise: 6, side: 1 }], ['bolt', { dist: 3 }], ['shell', {}], ['tracer', {}], ['reload', { tilt: 26 }]] },
+  subgun:  { n: 'SMG (MP40 · Thompson · PPSh)', clips: [1, 8, 44], needs: 'Ferrolho, Carregador, Mão (opcional)', steps: [['recoil', { kick: 1.6, rise: 4, side: 0.8 }], ['bolt', { dist: 2.5 }], ['trigger', { quiet: true }], ['shell', {}], ['tracer', {}], ['reload', { tilt: 22 }]] },
+  assault: { n: 'Fuzil de assalto (StG 44)', clips: [1, 8, 48], needs: 'Ferrolho, Carregador', steps: [['recoil', { kick: 2.2, rise: 6, side: 1 }], ['bolt', { dist: 3 }], ['trigger', { quiet: true }], ['shell', {}], ['tracer', {}], ['reload', { tilt: 26 }]] },
   carbine: { n: 'Carabina (M1 Carbine · Garand)', clips: [1, 10, 44], needs: 'Ferrolho, Carregador', steps: [['recoil', { kick: 2.8, rise: 8 }], ['bolt', { dist: 3.2 }], ['shell', {}], ['reload', { tilt: 20 }]] },
-  sniper:  { n: 'Sniper de ferrolho (Kar98k · Mosin)', clips: [1, 30, 48], needs: 'Ferrolho (alavanca), Carregador', steps: [['recoil', { kick: 4, rise: 12, side: 0.5, snap: 0.2 }], ['boltAction', {}], ['shell', { at: 0.5 }], ['reload', { tilt: 18 }]] },
+  sniper:  { n: 'Sniper de ferrolho (Kar98k · Mosin)', clips: [1, 30, 48], needs: 'Ferrolho (alavanca), Carregador', steps: [['recoil', { kick: 4, rise: 12, side: 0.5, snap: 0.2 }], ['boltAction', {}], ['shell', { at: 0.5 }], ['reload', { tilt: 18, boltPull: 0 }]] },
   shotgun: { n: 'Escopeta pump (Winchester 1897)', clips: [1, 26, 44], needs: 'Telha (pump)', steps: [['recoil', { kick: 5, rise: 14, snap: 0.15 }], ['pump', {}], ['shell', { at: 0.45, size: 1.6 }], ['reload', { tilt: 16, drop: 0 }]] },
-  pistol:  { n: 'Pistola (Luger · Colt 1911)', clips: [1, 6, 36], needs: 'Ferrolho (slide), Carregador', steps: [['recoil', { kick: 1.8, rise: 10, snap: 0.4 }], ['bolt', { dist: 2.2 }], ['shell', { size: 0.8 }], ['reload', { tilt: 30, drop: 10 }]] },
+  pistol:  { n: 'Pistola (Luger · Colt 1911)', clips: [1, 6, 36], needs: 'Ferrolho (slide), Carregador', steps: [['recoil', { kick: 1.8, rise: 10, snap: 0.4 }], ['bolt', { dist: 2.2 }], ['trigger', { quiet: true }], ['shell', { size: 0.8 }], ['reload', { tilt: 30, drop: 10 }]] },
   grenade: { n: 'Granada (pino + arremesso)', clips: [1, 26, 1], needs: 'Pino (criado sozinho se faltar)', steps: [['grenade', {}]] },
   knife:   { n: 'Faca / baioneta (golpe)', clips: [1, 12, 1], needs: '—', steps: [['knife', {}]] },
 };
@@ -1379,6 +1391,78 @@ async function defaultHands() {
   return DEFAULT_HANDS;
 }
 async function loadDemo() { return loadBundled('subgun'); }
+
+
+// ================================================================ AUTO-RIG (armas originais do AC)
+// grupos prontos por arma: peças numeradas na ordem de computeIslands (piece k), conferidas em renders
+const RIGS = {
+  subgun: { bytes: 103408, groups: [
+    { name: 'Carregador', surf: 'weapon', pieces: [2] }, { name: 'Ferrolho', surf: 'weapon', pieces: [6] },
+    { name: 'Gatilho', surf: 'weapon', pieces: [18], pivot: 'top' }, { name: 'Cano', surf: 'weapon', pieces: [15] },
+    { name: 'Mão', surf: 'hands', pieces: [0], parent: 'Carregador' }] },
+  assault: { bytes: 116728, groups: [
+    { name: 'Carregador', surf: 'weapon', pieces: [10] }, { name: 'Ferrolho', surf: 'weapon', pieces: [9] },
+    { name: 'Gatilho', surf: 'weapon', pieces: [7], pivot: 'top' }, { name: 'Cano', surf: 'weapon', pieces: [1, 15] },
+    { name: 'Mão', surf: 'hands', pieces: [0], parent: 'Carregador' }] },
+  sniper: { bytes: 228676, groups: [
+    { name: 'Carregador', surf: 'weapon', pieces: [2] }, { name: 'Mira', surf: 'weapon', pieces: [3, 4, 5, 6, 7, 8, 9] },
+    { name: 'Cano', surf: 'weapon', pieces: [0] }, { name: 'Mão', surf: 'hands', pieces: [0], parent: 'Carregador' }],
+    prims: [{ type: 'cyl', name: 'bolt', group: 'Ferrolho', size: [0.3, 3.2], pos: [7.5, 11.2, -6.3], rot: [0, 0, 90], pivot: [5.5, 11.2, -6.6], mat: 'acoGasto' }] },
+  carbine: { bytes: 350988, groups: [
+    { name: 'Carregador', surf: 'weapon', pieces: [2] }, { name: 'Carregador B', surf: 'weapon_2', pieces: [2], parent: 'Carregador' },
+    { name: 'Cano', surf: 'weapon', pieces: [0] }, { name: 'Mão', surf: 'hands', pieces: [0], parent: 'Carregador' }],
+    prims: [{ type: 'box', name: 'bolt', group: 'Ferrolho', size: [0.5, 1.6, 0.55], pos: [7.6, 15.5, -6.3], mat: 'acoOxidado' }] },
+  shotgun: { bytes: 82868, groups: [
+    { name: 'Telha', surf: 'weapon', pieces: [11] }, { name: 'Cano', surf: 'weapon', pieces: [0] },
+    { name: 'Mão', surf: 'hands', pieces: [0], parent: 'Telha' }] },
+  pistol: { bytes: 86988, groups: [
+    { name: 'Ferrolho', surf: 'weapon', pieces: [1, 3, 7, 8] }, { name: 'Carregador', surf: 'weapon', pieces: [2] },
+    { name: 'Gatilho', surf: 'weapon', pieces: [6], pivot: 'top' }] },
+  knife: { bytes: 102732, groups: [{ name: 'Lâmina', surf: 'weapon', pieces: [1] }, { name: 'Cabo', surf: 'weapon', pieces: [0, 2, 3] }] },
+  grenade: { bytes: 257924, groups: [{ name: 'Pino', surf: 'weapon', pieces: [0, 4] }, { name: 'Alavanca', surf: 'weapon', pieces: [3] }] },
+};
+function rigFor() {
+  const n = S.originalMD3 && S.originalMD3.byteLength;
+  return Object.entries(RIGS).find(([k, r]) => r.bytes === n) || null;
+}
+function applyRig({ silent = false } = {}) {
+  if (!model) return false;
+  const found = rigFor(); if (!found) { if (!silent) toast('Auto-rig só conhece as 8 armas originais do AC', 'warn'); return false; }
+  const [key, R] = found;
+  if (!silent) snapshot('auto-rig');
+  const made = [];
+  R.groups.forEach(G => {
+    if (groupByName(new RegExp('^' + G.name + '$', 'i')) >= 0) return;
+    const si = model.surfaces.findIndex(s => s.name === G.surf); if (si < 0) return;
+    const s = model.surfaces[si], order = [...new Set(s.piece)];
+    const isl = new Set(); G.pieces.forEach(k => { const p = order[k]; for (let i = 0; i < s.nIsl; i++) if (s.piece[i] === p) isl.add(i); });
+    if (!isl.size) return;
+    S.groups.forEach(g => { if (g.si === si) isl.forEach(i => g.isl.delete(i)); });
+    const c = [0, 0, 0], mx = [-1e9, -1e9, -1e9]; let n = 0;
+    isl.forEach(i => s.islVerts[i].forEach(v => { for (let q = 0; q < 3; q++) { c[q] += s.pos[0][v * 3 + q]; mx[q] = Math.max(mx[q], s.pos[0][v * 3 + q]); } n++; }));
+    const pivot = c.map(v => +(v / n).toFixed(2)); if (G.pivot === 'top') pivot[2] = +mx[2].toFixed(2);
+    S.groups.push({ name: G.name, si, isl, pivot, t: Z3(), r: Z3(), s: [1, 1, 1], hidden: false, keys: {}, parent: -1, rig: true });
+    made.push(G.name);
+  });
+  (R.prims || []).forEach(P => {
+    if (groupByName(new RegExp('^' + P.group + '$', 'i')) >= 0) return;
+    const { gi } = addPrimitive({ type: P.type, name: P.name, size: P.size, pos: P.pos, rot: P.rot || [0, 0, 0], mat: P.mat }, { silent: true });
+    const g = S.groups[gi]; g.name = P.group; g.prim = false; g.rig = true; if (P.pivot) g.pivot = [...P.pivot];
+    made.push(P.group + ' (peça nova)');
+  });
+  R.groups.forEach(G => { if (!G.parent) return; const c = groupByName(new RegExp('^' + G.name + '$', 'i')), p = groupByName(new RegExp('^' + G.parent + '$', 'i')); if (c >= 0 && p >= 0) S.groups[c].parent = p; });
+  S.gi = S.groups.length ? 0 : -1;
+  updateAll();
+  if (!silent || made.length) toast(`Auto-rig (${key}): ${made.join(', ') || 'grupos já existiam'}`, 'ok');
+  return true;
+}
+// a arma já vem com animação nos quadros (faca, granada, escopeta)?
+function hasBakedAnim() {
+  if (model.bakedCache !== undefined) return model.bakedCache;
+  const n0 = model.nfOrig || model.nf;
+  model.bakedCache = model.surfaces.some(s => !s.generated && s.pos.slice(1, n0).some(P => P.some((v, i) => Math.abs(v - s.pos[0][i]) > 0.05)));
+  return model.bakedCache;
+}
 
 // ---------------------------------------------------------------- presets de textura
 const PRESETS = {
@@ -1826,6 +1910,7 @@ function bindUI() {
     const r = addPrimitive({ type: t, pos, rot: t === 'shell' || t === 'pin' ? [0, 0, 90] : [0, 0, 0] }, { silent: true }); S.gi = r.gi; updateAll();
     toast(`Peça criada: grupo "${S.groups[r.gi].name}". Ajuste com Mover/Girar/Escala.`, 'ok');
   });
+  $('#btnRig').onclick = () => applyRig();
   $('#groupParent').onchange = e => { const g = S.groups[S.gi]; if (!g) return; snapshot('hierarquia'); g.parent = +e.target.value; updateAll(); };
   $('#btnHideGroup').onclick = () => { const g = S.groups[S.gi]; if (!g) return; snapshot('ocultar'); g.hidden = !g.hidden; updateAll(); };
   $('#btnResetGroup').onclick = () => { const g = S.groups[S.gi]; if (!g) return; snapshot('resetar grupo'); g.t = Z3(); g.r = Z3(); g.s = [1, 1, 1]; updateAll(); };
@@ -1940,7 +2025,7 @@ function thumbnail(w = 480, h = 300) {
   meshes.forEach(m => m.visible = true); updateColors(); camera.position.copy(saved.p); controls.target.copy(saved.t); controls.update();
   return out.toDataURL('image/png');
 }
-window.CM = { debugBox: () => meshes.map(m => { m.geometry.computeBoundingBox(); const b = m.geometry.boundingBox; return [m.visible, b.min.toArray().map(v => +v.toFixed(1)), b.max.toArray().map(v => +v.toFixed(1)), m.geometry.index.count, m.geometry.attributes.position.array.slice(0, 3).join(',')]; }), thumbnail, S, get model() { return model; }, get skins() { return skins; }, loadBundled, loadDemo, exportMD3, createGroup, selectIsland, assignMaterial, applyPreset, applyAnimBank, runGen, setFrame, frameCamera, setTool, parseMD3, undo, captureState, goStep, game, placeDecal, addPrimitive, assembleClips, interpKey };
+window.CM = { _i: { THREE, get meshes() { return meshes; }, camera, renderer, scene, root, grid, tagMarker, pivotMarker, controls, resize }, debugBox: () => meshes.map(m => { m.geometry.computeBoundingBox(); const b = m.geometry.boundingBox; return [m.visible, b.min.toArray().map(v => +v.toFixed(1)), b.max.toArray().map(v => +v.toFixed(1)), m.geometry.index.count, m.geometry.attributes.position.array.slice(0, 3).join(',')]; }), thumbnail, S, get model() { return model; }, get skins() { return skins; }, loadBundled, loadDemo, exportMD3, createGroup, selectIsland, assignMaterial, applyPreset, applyAnimBank, runGen, setFrame, frameCamera, setTool, parseMD3, undo, captureState, goStep, game, placeDecal, addPrimitive, assembleClips, interpKey };
 {
   const h = location.hash.slice(1);
   if (h === 'demo') loadBundled('subgun'); else if (WEAPONS[h]) loadBundled(h);

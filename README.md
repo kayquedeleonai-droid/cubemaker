@@ -10,6 +10,7 @@ O trabalho segue um **pipeline em 5 etapas**:
 
 1. **Arma**: as 8 armas originais do AC vêm embutidas (faca, pistola, carabina, escopeta, SMG, fuzil de assalto, sniper, granada). Também abre uma pasta, arquivos soltos ou um projeto.
 2. **Modelagem**
+   - **Auto-rig**: as 8 armas originais já abrem com os grupos prontos (ferrolho, carregador, gatilho, mão, telha do pump, pino, luneta, cano). O Kar98k e a carabina ganham uma alavanca de ferrolho nova.
    - Receitas da Segunda Guerra (MP40, Thompson, StG 44, Kar98k, M1 Carbine, Winchester 1897, Luger, 1911, M3, Stielhandgranate).
    - Grupos de peças com mover, girar, escalar e ocultar.
    - Hierarquia: um grupo "segue" outro, por exemplo a mão segue o carregador.
@@ -21,7 +22,7 @@ O trabalho segue um **pipeline em 5 etapas**:
    - **Decalques**: texto ou símbolos; pintado, gravado ou carimbo; com desgaste e espelhamento automático.
    - Pincel.
 4. **Animação**
-   - **Banco de animações** por tipo de arma, mais as animações salvas por você.
+   - **Banco de animações** por tipo de arma, mais as animações salvas por você. Com o auto-rig, funciona com um clique. Faca, granada e escopeta mantêm a animação original e recebem as novas por cima.
    - **Geradores**: recuo com mola, ferrolho, ferrolho manual, pump, gatilho, recarga completa, estojo ejetado, traçante, granada (pino + arremesso), golpe de faca e respiração.
    - Quadros-chave com curvas (suave, impacto, mola, passa-e-volta, degrau), escala 0 para sumir e trilha "arma inteira".
    - Montador de clipes que reescreve o `md3anim`.
@@ -68,5 +69,4 @@ Os modelos em `assets/weapons/` são de **makkE (Markus Bekel)** para o AssaultC
 ## Próximos passos
 
 - Modelos de mundo/terceira pessoa (MD2, `world/tris.md2`) para a arma nova aparecer também na mão dos outros jogadores
-- Auto-rig: grupos (ferrolho, carregador, gatilho) já prontos para as 8 armas originais
 - Camadas de pintura empilháveis com máscaras
