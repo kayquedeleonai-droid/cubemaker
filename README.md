@@ -18,6 +18,11 @@ O trabalho segue um **pipeline em 5 etapas**, para armas e para personagens.
 
 **Armas:**
 
+0. **Forja: criar arma do zero.**
+   - Seis famílias: pistola, submetralhadora, fuzil de assalto, ferrolho, semiautomático e escopeta.
+   - Controles para época (1ª/2ª Guerra ou moderna), cano, corpo, coronha, carregador, empunhadura, punho frontal, mira (ferro, luneta, ponto vermelho), boca (freio, supressor, compensador), camisa perfurada, bipé, baioneta, lado da alavanca, metal e madeira.
+   - A arma é refeita na hora, já com textura, grupos e animação de fábrica.
+
 1. **Arma**
    - **Arsenal da 1ª e 2ª Guerra**: 39 modelos prontos, com textura e grupos de animação, que entram no lugar da arma do AC.
    - Cada modelo já abre com a **animação de fábrica** dele:

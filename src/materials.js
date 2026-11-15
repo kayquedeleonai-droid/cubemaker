@@ -16,11 +16,12 @@ export const MATS = {
   dunkelgelb:  { n: 'Dunkelgelb (areia)',    c: [164, 140, 86], p: 'paint',    wear: 1,   wearColor: [110, 108, 100] },
   couro:       { n: 'Couro',                 c: [100, 64, 36],  p: 'leather',  wear: 0.6, wearColor: [150, 110, 72] },
   cobre:       { n: 'Cobre (projétil)',      c: [178, 100, 58], p: 'metal',    wear: 0.3, wearColor: [220, 150, 100] },
+  polimero:    { n: 'Polímero preto', c: [38, 39, 42], p: 'paint', wear: 0.3, wearColor: [90, 90, 92] },
   azulTampa:   { n: 'Tampa azul (Eihandgranate)', c: [52, 84, 140], p: 'paint', wear: 0.6, wearColor: [170, 170, 165] },
   tracer:      { n: 'Traçante (brilho)',     c: [255, 214, 120], p: 'paint',   wear: 0 },
   lona:        { n: 'Lona cáqui',            c: [140, 124, 90], p: 'cloth',    wear: 0.3, wearColor: [170, 156, 120] },
 };
-export const MAT_ORDER = ['acoOxidado', 'acoPreto', 'parkCinza', 'parkVerde', 'acoGasto', 'latao', 'nogueira', 'faia', 'madeiraClara', 'baquelite', 'oliva', 'feldgrau', 'dunkelgelb', 'couro', 'lona', 'cobre', 'azulTampa'];
+export const MAT_ORDER = ['acoOxidado', 'acoPreto', 'parkCinza', 'parkVerde', 'acoGasto', 'latao', 'nogueira', 'faia', 'madeiraClara', 'baquelite', 'oliva', 'feldgrau', 'dunkelgelb', 'couro', 'lona', 'cobre', 'azulTampa', 'polimero'];
 
 function hash(x, y) {
   let h = Math.imul(x | 0, 374761393) ^ Math.imul(y | 0, 668265263);
@@ -155,7 +156,7 @@ const BANK = {
   ebano:        { n: 'Madeira escura', tex: 'ebano', cat: 'madeira', wear: 0.6, wearColor: [130, 90, 60] },
   tigre:        { n: 'Madeira tigrada', tex: 'tigre', cat: 'madeira', wear: 0.6, wearColor: [196, 150, 100] },
 };
-const CAT_OF = { acoOxidado: 'metal', acoPreto: 'metal', parkCinza: 'metal', parkVerde: 'metal', acoGasto: 'metal', latao: 'metal', cobre: 'metal', nogueira: 'madeira', faia: 'madeira', madeiraClara: 'madeira', baquelite: 'detalhe', azulTampa: 'pintura', oliva: 'pintura', feldgrau: 'pintura', dunkelgelb: 'pintura', couro: 'detalhe', lona: 'detalhe', tracer: 'detalhe' };
+const CAT_OF = { acoOxidado: 'metal', acoPreto: 'metal', parkCinza: 'metal', parkVerde: 'metal', acoGasto: 'metal', latao: 'metal', cobre: 'metal', nogueira: 'madeira', faia: 'madeira', madeiraClara: 'madeira', baquelite: 'detalhe', polimero: 'detalhe', azulTampa: 'pintura', oliva: 'pintura', feldgrau: 'pintura', dunkelgelb: 'pintura', couro: 'detalhe', lona: 'detalhe', tracer: 'detalhe' };
 Object.entries(CAT_OF).forEach(([k, c]) => MATS[k].cat = c);
 Object.entries(BANK).forEach(([k, m]) => {
   let r = 0, g = 0, b = 0, n = 0;                                     // cor média (miniatura e desgaste)

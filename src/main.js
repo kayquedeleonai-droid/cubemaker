@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import JSZip from 'jszip';
 import { createGame } from './game.js';
-import { ARSENAL, buildPreset, atlasCanvas } from './presets.js';
+import { ARSENAL, buildPreset, atlasCanvas, FORGE_FAMILIES, FORGE_OPTIONS, forgeDef } from './presets.js';
 import { parseMD3, parseMD2, buildMD3, computeIslands, parseCfg, encodeNormal } from './md3.js';
 import { MATS, MAT_ORDER, fbm, TEX, CATS, registerImageTexture } from './materials.js';
 
@@ -110,7 +110,7 @@ async function loadWeapon({ md3Buf, cfgText, skinImages, weaponName, project, sk
   model = m; m.nfOrig = m.nf; meshes = []; skins = [];
   S.originalMD3 = md3Buf; S.cfg = (cfgText || defaultCfg(m)).replace(/\r\n/g, '\n'); S.weapon = weaponName || S.weapon;
   S.global.detail = 1;
-  S.originalCfg = cfgText || null; S.skinSources = skinSources || []; S.acOriginal = origin || null; S.preset = null; S.presetM = null; S.rigid = null;
+  S.originalCfg = cfgText || null; S.skinSources = skinSources || []; S.acOriginal = origin || null; S.preset = null; S.presetM = null; S.rigid = null; S.forge = null;
   S.islandMat = m.surfaces.map(() => new Map()); S.groups = []; S.gi = -1; S.sel = { si: -1, isl: new Set() };
   S.tagOffset = [0, 0, 0]; S.frame = 0; S.modifiedSkins = new Set(); undoStack.length = 0; redoStack.length = 0;
   S.prims = []; S.animRoot = false; S.decals = []; S.di = -1;
@@ -1117,6 +1117,15 @@ const GEN = {
 // ---- animação de fábrica de cada modelo do arsenal
 function presetAnim(def) {
   const id = def.id, slot = def.slot;
+  if (def.forge) {
+    const p = def.forge.p, side = p.mag === 'lateral', drum = p.mag === 'tambor', boxMag = ['reto', 'curvo', 'tambor', 'lateral'].includes(p.mag);
+    const reload = boxMag ? ['reload', { tilt: side ? 12 : 22, dropAxis: side ? '-x' : '-z', drop: side ? 12 : 15, spin: drum ? 90 : 0 }] : slot === 'shotgun' ? ['shellLoad', { count: 4 }] : ['stripper'];
+    if (slot === 'pistol') return { clips: [1, 6, 36], steps: [['recoil', { kick: 1.8, rise: 10, snap: 0.4 }], ['bolt', { dist: 2.2 }], ['trigger', { quiet: true }], ['shell', { size: 0.8 }], ['reload', { tilt: 30, drop: 10 }]], n: 'slide, cápsula e carregador' };
+    if (slot === 'sniper') return { clips: [1, 30, 48], steps: [['recoil', { kick: 4, rise: 12, side: 0.5, snap: 0.2 }], ['boltAction', {}], ['trigger', { quiet: true }], ['shell', { at: 0.5 }], boxMag ? ['reload', { tilt: 18, boltPull: 0, dropAxis: side ? '-x' : '-z' }] : ['stripper']], n: 'ferrolho manual, cápsula e recarga' };
+    if (slot === 'shotgun') return { clips: [1, 26, 44], steps: [['recoil', { kick: 5, rise: 14, snap: 0.15 }], ['pump', {}], ['trigger', { quiet: true }], ['shell', { at: 0.45, size: 1.4 }], ['shellLoad', { count: 4 }]], n: 'impacto, pump, cápsula e cartuchos' };
+    const auto = slot === 'subgun' || slot === 'assault';
+    return { clips: slot === 'carbine' ? [1, 10, 44] : [1, 8, slot === 'assault' ? 48 : 44], steps: [['recoil', { kick: slot === 'subgun' ? 1.6 : slot === 'assault' ? 2.2 : 2.8, rise: slot === 'carbine' ? 8 : 5, side: 0.9 }], ['bolt', { dist: 2.8 }], ['trigger', { quiet: true }], ['shell', {}], ...(auto ? [['tracer', {}]] : []), reload], n: 'recuo, ferrolho, cápsula' + (auto ? ', traçante' : '') + ' e recarga' };
+  }
   if (slot === 'grenade') return { clips: null, steps: [['pinPull', { style: /stiel|eihand/.test(id) ? 'cap' : id === 'rgd33' ? 'slide' : 'ring' }], ['spoon', {}]], n: 'pino + alavanca' };
   if (slot === 'knife') return { clips: null, steps: [], n: 'golpe original' };
   if (slot === 'pistol') {
@@ -1247,7 +1256,7 @@ function charCredits() {
 }
 function credits() {
   return `Arma modificada com CUBE MAKER v${VERSION} (cubemaker.kayquedeleon.app)\n\n` +
-    (S.preset ? `Modelo da arma: ${S.preset.n} (${S.preset.c}), modelado no CUBE MAKER\nMãos e animações originais do slot: makkE (Markus Bekel) — AssaultCube\n` : `Modelo e textura originais: makkE (Markus Bekel) — AssaultCube\n`) +
+    (S.preset ? `Modelo da arma: ${S.preset.n} (${S.preset.c === 'Forja' ? 'criado na Forja' : S.preset.c}), modelado no CUBE MAKER\nMãos e animações originais do slot: makkE (Markus Bekel) — AssaultCube\n` : `Modelo e textura originais: makkE (Markus Bekel) — AssaultCube\n`) +
     `Licença: Creative Commons Attribution-NonCommercial-ShareAlike 2.5\n` +
     `http://creativecommons.org/licenses/by-nc-sa/2.5/\n\n` +
     `Este trabalho derivado é distribuído sob a mesma licença (BY-NC-SA).\n`;
@@ -1429,7 +1438,7 @@ async function saveProject() {
     md3: bufToB64(S.originalMD3),
     skins: skins.map((sk, i) => ({ file: S.skinFiles[i], orig: sk.orig.toDataURL('image/png'), overlay: sk.overlay.toDataURL('image/png') })),
     islandMat: S.islandMat.map(m => [...m]), groups: S.groups.map(g => ({ ...g, isl: [...g.isl] })),
-    global: S.global, tagOffset: S.tagOffset, modified: [...S.modifiedSkins], root: S.root, prims: S.prims, fx: S.fx, decals: S.decals, preset: S.preset, presetM: S.presetM, rigid: S.rigid
+    global: S.global, tagOffset: S.tagOffset, modified: [...S.modifiedSkins], root: S.root, prims: S.prims, fx: S.fx, decals: S.decals, preset: S.preset, presetM: S.presetM, rigid: S.rigid, forge: S.forge, forgeName: S.forgeName
   };
   download(`${S.weapon}.cubemaker`, new Blob([JSON.stringify(proj)], { type: 'application/json' }));
   toast('Projeto salvo', 'ok');
@@ -1449,6 +1458,7 @@ function applyProject(p) {
   S.gi = S.groups.length ? 0 : -1;
   S.global = { ...S.global, ...p.global }; S.tagOffset = p.tagOffset || [0, 0, 0];
   if (p.root) S.root = p.root;
+  if (p.forge) { S.forge = p.forge; S.forgeName = p.forgeName; }
   if (p.preset) S.preset = p.preset; if (p.presetM) S.presetM = p.presetM; if (p.rigid) S.rigid = p.rigid;
   if (p.fx) S.fx = { ...S.fx, ...p.fx }; S.decals = p.decals || [];
   S.modifiedSkins = new Set(p.modified || []);
@@ -1640,7 +1650,7 @@ function rigidFrames(surf) {
   return surf.pos.map(P => best < 1e-6 ? new THREE.Matrix4() : basis(P).multiply(B0inv));
 }
 async function loadPreset(id) {
-  const def = ARSENAL.find(a => a.id === id); if (!def) return;
+  const def = typeof id === 'string' ? ARSENAL.find(a => a.id === id) : id; if (!def) return;
   const slot = def.slot, base = `weapons/${slot}/`;
   try {
     const [md3Buf0, cfg0] = await Promise.all([fetchBuf(base + 'tris_high.md3'), fetch(base + 'md3.cfg').then(r => r.ok ? r.text() : '')]);
@@ -1701,17 +1711,42 @@ async function loadPreset(id) {
     S.gi = S.groups.length ? 0 : -1;
     Object.assign(S.global, { wear: 0.4, age: 0.25, dirt: 0.25 }); S.fx = { ...S.fx, cavity: 0.4, scratches: 0, rust: 0, dust: 0, burn: 0, blood: 0, ...(def.fx || {}) };
     if (def.fx && def.fx.dirt != null) S.global.dirt = def.fx.dirt;
-    S.preset = { id: def.id, n: def.n, war: def.war, c: def.c }; S.presetM = M0.toArray();
+    S.preset = { id: def.id, n: def.n, war: def.war, c: def.c }; S.presetM = M0.toArray(); S.forge = def.forge ? JSON.parse(JSON.stringify(def.forge)) : null; S.forgeName = def.forge ? def.n : '';
     S.rigid = frames.some(F => !F.equals(new THREE.Matrix4())) ? frames.map(F => F.toArray()) : null;
     applyPresetAnim(def, true);
     model.surfaces.forEach((_, i) => S.modifiedSkins.add(i));
     skins.forEach((_, i) => composite(i));
-    updateAll(); frameCamera('orbit'); goStep(2);
+    updateAll(); if (!def.forge || !S.forgeKeepCam) frameCamera('orbit'); S.forgeKeepCam = false; goStep(2); updateForgeUI();
     toast(`${def.n} pronto no lugar de "${slot}" — grupos: ${[...gmap.keys(), ...(hi >= 0 && Bp.spec.support ? ['Mão'] : [])].join(', ') || '—'}`, 'ok');
   } catch (e) {
     console.error(e);
     toast(location.protocol === 'file:' ? 'Abra pelo site (cubemaker.kayquedeleon.app) para usar o arsenal' : 'Falha ao montar o modelo: ' + e.message, 'err');
   }
+}
+// ---- Forja (UI)
+let forgeT = 0;
+function startForge(fam) { const F = FORGE_FAMILIES[fam]; return loadPreset(forgeDef(fam, { ...F.p }, 'Minha ' + F.n.toLowerCase())); }
+function rebuildForge() {
+  clearTimeout(forgeT);
+  forgeT = setTimeout(() => { if (!S.forge) return; S.forgeKeepCam = true; const keepName = $('#forgeName').value || S.forgeName; loadPreset(forgeDef(S.forge.fam, S.forge.p, keepName)); }, 220);
+}
+function updateForgeUI() {
+  const box = $('#forgeBox'); if (!box) return;
+  box.style.display = S.forge ? '' : 'none'; if (!S.forge) return;
+  const p = S.forge.p, F = FORGE_FAMILIES[S.forge.fam];
+  $('#forgeTitle').textContent = 'Forja · ' + F.n; $('#forgeName').value = S.forgeName || '';
+  const ctl = $('#forgeCtl'); ctl.innerHTML = '';
+  const sel = (key, label) => { const row = document.createElement('div'); row.className = 'field row'; row.innerHTML = `<label style="width:110px">${label}</label><select>${FORGE_OPTIONS[key].map(([v, n]) => `<option value="${v}">${n}</option>`).join('')}</select>`; const se = row.querySelector('select'); se.value = p[key]; se.onchange = () => { p[key] = se.value; rebuildForge(); }; ctl.appendChild(row); };
+  const mats = (key, label, cats) => { const row = document.createElement('div'); row.className = 'field row'; row.innerHTML = `<label style="width:110px">${label}</label><select>${MAT_ORDER.filter(k => MATS[k] && cats.includes(MATS[k].cat)).map(k => `<option value="${k}">${MATS[k].n}</option>`).join('')}</select>`; const se = row.querySelector('select'); se.value = p[key]; se.onchange = () => { p[key] = se.value; rebuildForge(); }; ctl.appendChild(row); };
+  sel('era', 'Época');
+  const sl = document.createElement('div'); ctl.appendChild(sl);
+  slider(sl, 'Cano (mm)', 60, 700, 5, () => p.barrel, v => { p.barrel = v; rebuildForge(); });
+  slider(sl, 'Corpo (mm)', 120, 420, 5, () => p.body, v => { p.body = v; rebuildForge(); });
+  if (S.forge.fam !== 'pistol') {
+    slider(sl, 'Carregador (mm)', 20, 320, 5, () => p.magLen || 0, v => { p.magLen = v; rebuildForge(); });
+    ['stock', 'mag', 'grip', 'fore', 'sight', 'muzzle', 'jacket', 'bipod', 'bayonet', 'side'].forEach(k => sel(k, { stock: 'Coronha', mag: 'Carregador', grip: 'Empunhadura', fore: 'Punho frontal', sight: 'Mira', muzzle: 'Boca', jacket: 'Camisa', bipod: 'Bipé', bayonet: 'Baioneta', side: 'Alavanca' }[k]));
+  }
+  mats('metal', 'Metal', ['metal']); mats('wood', 'Madeira/cabo', ['madeira', 'detalhe']);
 }
 function buildArsenalUI() {
   const box = $('#arsenal'); if (!box) return;
@@ -1719,6 +1754,8 @@ function buildArsenalUI() {
   const slots = Object.keys(SLOT_NAMES);
   if (!S.arsSlot) S.arsSlot = 'grenade';
   slots.forEach(k => { const b = document.createElement('button'); b.textContent = SLOT_NAMES[k] + ` (${ARSENAL.filter(a => a.slot === k).length})`; b.className = k === S.arsSlot ? 'on' : ''; b.onclick = () => { S.arsSlot = k; buildArsenalUI(); }; tabs.appendChild(b); });
+  const fb = $('#forgeFams');
+  if (fb && !fb.children.length) Object.entries(FORGE_FAMILIES).forEach(([k, F]) => { const b = document.createElement('button'); b.className = 'forgecard'; b.innerHTML = `<b>${F.n}</b><small>${F.d}</small>`; b.onclick = () => startForge(k); fb.appendChild(b); });
   box.innerHTML = '';
   ARSENAL.filter(a => a.slot === S.arsSlot).forEach(a => {
     const b = document.createElement('button'); b.className = 'wcard';
@@ -2224,6 +2261,7 @@ function updateSurfacesUI() {
 }
 function updateAll() {
   if (!model) return;
+  updateForgeUI();
   updateGeometry(); updateSelectionUI(); updateGroupsUI(); updateMeshUI(); updateAnimUI(); updateTimeline(); updateSurfacesUI(); updateGlobalUI(); updateRecipesUI(); updateDecalsUI(); updateBankUI(); draw2D();
   $('#stats').textContent = `${model.surfaces.reduce((a, s) => a + s.ntri, 0)} tri · ${model.nf} quadros · ${S.groups.length} grupos`;
   $('#curWeapon').textContent = S.weapon ? `${S.weapon}` : '';
@@ -2296,6 +2334,7 @@ function bindUI() {
     toast(`Peça criada: grupo "${S.groups[r.gi].name}". Ajuste com Mover/Girar/Escala.`, 'ok');
   });
   $('#btnRig').onclick = () => applyRig();
+  $('#forgeName').onchange = () => { S.forgeName = $('#forgeName').value; if (S.preset) S.preset.n = S.forgeName; };
   $('#openChar').onchange = e => openCharacterFolder(e.target.files).catch(err => toast(err.message, 'err'));
   $$('[data-ins]').forEach(b => b.onclick = () => addInsignia(b.dataset.ins));
   const charSync = () => { if (!S.char) return; S.char.target = $('#charTargetNick').checked ? 'nick' : 'team'; S.char.team = $('#charTeam').value; S.char.slot = $('#charSlot').value; S.char.nick = $('#charNick').value.trim(); S.char.nickTeam = $('#charNickTeam').value; S.char.multi = $('#charMulti').checked; $('#charPath').textContent = charTarget(); };
@@ -2414,7 +2453,7 @@ function thumbnail(w = 480, h = 300, hideHands = false) {
   meshes.forEach(m => m.visible = true); updateColors(); camera.position.copy(saved.p); controls.target.copy(saved.t); controls.update();
   return out.toDataURL('image/png');
 }
-window.CM = { loadCharacter, applyUniform, addInsignia, UNIFORMS, charTarget, loadPreset, ARSENAL, _i: { THREE, get meshes() { return meshes; }, camera, renderer, scene, root, grid, tagMarker, pivotMarker, controls, resize }, debugBox: () => meshes.map(m => { m.geometry.computeBoundingBox(); const b = m.geometry.boundingBox; return [m.visible, b.min.toArray().map(v => +v.toFixed(1)), b.max.toArray().map(v => +v.toFixed(1)), m.geometry.index.count, m.geometry.attributes.position.array.slice(0, 3).join(',')]; }), thumbnail, S, get model() { return model; }, get skins() { return skins; }, loadBundled, loadDemo, exportMD3, createGroup, selectIsland, assignMaterial, applyPreset, applyAnimBank, runGen, setFrame, frameCamera, setTool, parseMD3, undo, captureState, goStep, game, placeDecal, addPrimitive, assembleClips, interpKey };
+window.CM = { startForge, forgeDef, loadCharacter, applyUniform, addInsignia, UNIFORMS, charTarget, loadPreset, ARSENAL, _i: { THREE, get meshes() { return meshes; }, camera, renderer, scene, root, grid, tagMarker, pivotMarker, controls, resize }, debugBox: () => meshes.map(m => { m.geometry.computeBoundingBox(); const b = m.geometry.boundingBox; return [m.visible, b.min.toArray().map(v => +v.toFixed(1)), b.max.toArray().map(v => +v.toFixed(1)), m.geometry.index.count, m.geometry.attributes.position.array.slice(0, 3).join(',')]; }), thumbnail, S, get model() { return model; }, get skins() { return skins; }, loadBundled, loadDemo, exportMD3, createGroup, selectIsland, assignMaterial, applyPreset, applyAnimBank, runGen, setFrame, frameCamera, setTool, parseMD3, undo, captureState, goStep, game, placeDecal, addPrimitive, assembleClips, interpKey };
 {
   const h = location.hash.slice(1);
   if (h === 'demo') loadBundled('subgun'); else if (WEAPONS[h]) loadBundled(h);

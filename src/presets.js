@@ -489,3 +489,84 @@ export function atlasCanvas(B, w = 1024, h = 512) {
   x.putImageData(im, 0, 0);
   return c;
 }
+
+// ================================================================ FORJA: arma do zero por parâmetros
+export const FORGE_FAMILIES = {
+  pistol:  { n: 'Pistola', slot: 'pistol', d: 'Slide, armação e empunhadura.', p: { era: 'ww2', barrel: 110, body: 190, stock: 'nenhuma', mag: 'cabo', magLen: 30, grip: 'pistola', fore: 'nao', sight: 'ferro', muzzle: 'nenhum', wood: 'nogueira', metal: 'acoOxidado', jacket: 'nao', bipod: 'nao', bayonet: 'nao', side: 'direita' } },
+  smg:     { n: 'Submetralhadora', slot: 'subgun', d: 'Compacta, automática, ferrolho aberto.', p: { era: 'ww2', barrel: 150, body: 260, stock: 'dobravel', mag: 'reto', magLen: 200, grip: 'pistola', fore: 'nao', sight: 'ferro', muzzle: 'nenhum', wood: 'baquelite', metal: 'acoOxidado', jacket: 'sim', bipod: 'nao', bayonet: 'nao', side: 'esquerda' } },
+  assault: { n: 'Fuzil de assalto', slot: 'assault', d: 'Carregador curvo, seletor automático.', p: { era: 'ww2', barrel: 300, body: 330, stock: 'madeira', mag: 'curvo', magLen: 230, grip: 'pistola', fore: 'nao', sight: 'ferro', muzzle: 'freio', wood: 'nogueira', metal: 'acoOxidado', jacket: 'nao', bipod: 'nao', bayonet: 'nao', side: 'esquerda' } },
+  bolt:    { n: 'Fuzil de ferrolho', slot: 'sniper', d: 'Ferrolho manual, coronha inteira de madeira.', p: { era: 'ww2', barrel: 360, body: 230, stock: 'inteira', mag: 'interno', magLen: 0, grip: 'reta', fore: 'nao', sight: 'luneta', muzzle: 'nenhum', wood: 'faia', metal: 'acoOxidado', jacket: 'nao', bipod: 'nao', bayonet: 'nao', side: 'direita' } },
+  semi:    { n: 'Semiautomático / carabina', slot: 'carbine', d: 'Tiro a tiro, carregador destacável.', p: { era: 'ww2', barrel: 300, body: 220, stock: 'inteira', mag: 'reto', magLen: 70, grip: 'reta', fore: 'nao', sight: 'ferro', muzzle: 'nenhum', wood: 'madeiraClara', metal: 'parkCinza', jacket: 'nao', bipod: 'nao', bayonet: 'nao', side: 'direita' } },
+  shotgun: { n: 'Escopeta', slot: 'shotgun', d: 'Pump com tubo de cartuchos.', p: { era: 'ww2', barrel: 460, body: 160, stock: 'madeira', mag: 'tubo', magLen: 0, grip: 'reta', fore: 'nao', sight: 'ferro', muzzle: 'nenhum', wood: 'nogueira', metal: 'acoPreto', jacket: 'sim', bipod: 'nao', bayonet: 'nao', side: 'direita' } },
+};
+export const FORGE_OPTIONS = {
+  era: [['ww2', '2ª Guerra'], ['ww1', '1ª Guerra'], ['moderno', 'Moderna']],
+  stock: [['nenhuma', 'Sem coronha'], ['madeira', 'Madeira'], ['inteira', 'Madeira inteira (até o cano)'], ['dobravel', 'Dobrável (hastes)'], ['esqueleto', 'Esqueleto (tubo)'], ['polimero', 'Polímero ajustável']],
+  mag: [['reto', 'Reto'], ['curvo', 'Curvo'], ['tambor', 'Tambor'], ['lateral', 'Lateral (esquerda)'], ['interno', 'Interno'], ['tubo', 'Tubo (escopeta)'], ['cabo', 'No cabo (pistola)']],
+  grip: [['pistola', 'Empunhadura de pistola'], ['reta', 'Reta (pulso da coronha)']],
+  fore: [['nao', 'Sem punho frontal'], ['vertical', 'Punho vertical']],
+  sight: [['ferro', 'Mira de ferro'], ['luneta', 'Luneta'], ['pontovermelho', 'Ponto vermelho + trilho']],
+  muzzle: [['nenhum', 'Nenhum'], ['freio', 'Freio de boca'], ['supressor', 'Supressor'], ['compensador', 'Compensador inclinado']],
+  jacket: [['nao', 'Não'], ['sim', 'Camisa perfurada']],
+  bipod: [['nao', 'Não'], ['sim', 'Bipé']],
+  bayonet: [['nao', 'Não'], ['sim', 'Baioneta']],
+  side: [['direita', 'Direita'], ['esquerda', 'Esquerda']],
+};
+export function forgeBuild(fam, p) {
+  const modern = p.era === 'moderno', m = modern ? 'acoPreto' : p.metal, w = modern ? 'polimero' : p.wood, P = [];
+  const sx = p.side === 'esquerda' ? -1 : 1;
+  if (fam === 'pistol') {
+    const L = p.body, by = (p.barrel - 20) / 2;
+    P.push(B('Ferrolho', m, [20, L, 24], [0, L / 2 - 70, 2]), B(null, m, [20, L * 0.65, 18], [0, L * 0.3 - 70, -18]));
+    if (p.barrel > L - 60) P.push(C('Cano', m, 6, p.barrel - (L - 70) + 10, [0, (L - 70) + (p.barrel - (L - 70)) / 2, 2]));
+    P.push(C(null, 'acoPreto', 6, 8, [0, Math.max(L - 70, p.barrel) - 2, 2], { cell: 'boca' }));
+    P.push(E(null, w === 'baquelite' || w === 'polimero' ? w : 'quadriculado', [[-60, -24], [-24, -24], [-36, -110], [-76, -108]], 28, [0, 0, 0], { cell: 'cabo' }));
+    P.push(B('Carregador', m, [16, 34, 10], [0, -58, -114], { rot: [12, 0, 0] }), B('Mira', m, [3, 6, 8], [0, L - 80, 18]), B('Mira', m, [12, 6, 8], [0, -60, 18]));
+    P.push(...trigger(m, 26, -8));
+    return { parts: P, muzzle: Math.max(L - 70, p.barrel) + 4, support: null, port: [12, 20, 10] };
+  }
+  const rear = -90, front = rear + p.body, mz = front + p.barrel, br = fam === 'shotgun' ? 10 : 8;
+  P.push(B(null, m, [26, p.body, 34], [0, (rear + front) / 2, -2]));
+  P.push(C('Cano', m, br, p.barrel + 10, [0, front + p.barrel / 2 - 5, 0]));
+  if (p.jacket === 'sim') P.push(C(null, 'perfurado', br + 8, p.barrel * 0.62, [0, front + p.barrel * 0.31, 1]));
+  // coronha
+  if (p.stock === 'madeira') P.push(E(null, w, [[rear - 30, -6], [rear - 30, 18], [-360, -2], [-360, -116], [-310, -120], [rear - 50, -46]], 34, [0, 0, 0], { cell: 'coronha' }));
+  if (p.stock === 'inteira') P.push(E(null, w, [[-380, -18], [-380, -135], [-340, -140], [-150, -62], [-70, -64], [-40, -30], [front + p.barrel * 0.6, -30], [front + p.barrel * 0.6, -14], [80, -12], [-30, -14], [-120, -24], [-310, -10]], 34, [0, 0, 0], { cell: 'coronha' }),
+    B(null, w, [22, p.barrel * 0.45, 12], [0, front + p.barrel * 0.33, 12], { cell: 'guardamao' }));
+  if (p.stock === 'dobravel') P.push(B(null, m, [4, 210, 6], [11, 10, -40], { cell: 'haste' }), B(null, m, [4, 210, 6], [-11, 10, -40], { cell: 'haste' }), B(null, m, [36, 6, 44], [0, 112, -48], { cell: 'soleira' }));
+  if (p.stock === 'esqueleto') P.push(C(null, m, 5, 220, [0, rear - 110, -14], { cell: 'haste' }), B(null, m, [10, 8, 60], [0, rear - 220, -30], { cell: 'soleira' }));
+  if (p.stock === 'polimero') P.push(E(null, 'polimero', [[rear - 10, 4], [-330, 0], [-330, -100], [-300, -104], [rear - 30, -30]], 32, [0, 0, 0], { cell: 'coronha' }), C(null, m, 9, 120, [0, rear - 60, -2], { cell: 'tubo' }));
+  // empunhadura
+  if (p.grip === 'pistola') P.push(grip(w === 'polimero' || w === 'baquelite' ? w : modern ? 'polimero' : w, -45, -22, 95, 16, 26));
+  if (p.fore === 'vertical') P.push(E(null, w, [[front - 40, -18], [front - 5, -18], [front - 10, -100], [front - 42, -100]], 26, [0, 0, 0], { cell: 'punho' }));
+  // carregador
+  const my = Math.min(70, front - 60);
+  if (p.mag === 'reto') P.push(B('Carregador', m, [18, 32, p.magLen], [0, my, -26 - p.magLen / 2]));
+  if (p.mag === 'curvo') P.push(E('Carregador', m, [[my - 25, -24], [my + 25, -24], [my + 55, -24 - p.magLen * 0.45], [my + 95, -24 - p.magLen], [my + 50, -24 - p.magLen - 18], [my + 10, -24 - p.magLen * 0.5]], 22));
+  if (p.mag === 'tambor') P.push(C('Carregador', m, 62, 40, [0, my, -86], { axis: 'x' }));
+  if (p.mag === 'lateral') P.push(B('Carregador', m, [190, 30, 22], [-115, my, 0]), B(null, m, [40, 40, 30], [-24, my, 0], { cell: 'poço' }));
+  if (p.mag === 'interno') P.push(B(null, m, [20, 90, 8], [0, 40, -40]));
+  if (p.mag === 'tubo') { P.push(C(null, m, 8, p.barrel * 0.75, [0, front + p.barrel * 0.375, -22], { cell: 'tubo' })); P.push(C('Telha', w, 15, 120, [0, front + 70, -22])); }
+  // mira
+  if (p.sight === 'ferro') P.push(B('Mira', m, [12, 18, 12], [0, rear + 40, 22]), B('Mira', m, [3, 6, 14], [0, mz - 14, 14]));
+  if (p.sight === 'luneta') P.push(C('Mira', 'acoPreto', 13, 220, [0, 10, 52]), L('Mira', 'acoPreto', [[0, 0], [19, 0], [19, 40], [13, 70], [0, 70]], [0, 100, 52], { cell: 'luneta' }), L('Mira', 'acoPreto', [[0, 0], [13, 0], [18, 30], [18, 55], [0, 55]], [0, -155, 52], { cell: 'luneta' }), B('Mira', 'acoPreto', [12, 16, 38], [0, -40, 32], { cell: 'montagem' }), B('Mira', 'acoPreto', [12, 16, 38], [0, 60, 32], { cell: 'montagem' }));
+  if (p.sight === 'pontovermelho') P.push(B('Mira', 'recartilhado', [18, p.body * 0.8, 8], [0, (rear + front) / 2, 19]), B('Mira', 'acoPreto', [20, 50, 26], [0, 10, 34]), B('Mira', 'tracer', [12, 2, 14], [0, -14, 36], { cell: 'lente' }));
+  // boca
+  if (p.muzzle === 'freio') P.push(B(null, m, [22, 40, 22], [0, mz + 14, 0], { cell: 'freio' }));
+  if (p.muzzle === 'supressor') P.push(C(null, 'acoPreto', br + 8, 150, [0, mz + 70, 0], { cell: 'supressor' }));
+  if (p.muzzle === 'compensador') P.push(B(null, m, [30, 16, 34], [0, mz + 6, 0], { rot: [24, 0, 0], cell: 'freio' }));
+  const tip = mz + (p.muzzle === 'supressor' ? 145 : p.muzzle === 'freio' ? 34 : 10);
+  if (p.bipod === 'sim') P.push(B(null, m, [6, 220, 6], [8, mz - 120, -16], { cell: 'bipe' }), B(null, m, [6, 220, 6], [-8, mz - 120, -16], { cell: 'bipe' }));
+  if (p.bayonet === 'sim') P.push(E(null, 'acoGasto', [[mz - 20, -14], [mz + 200, -10], [mz + 230, -16], [mz - 20, -24]], 4, [0, 0, 0], { cell: 'baioneta' }));
+  // ferrolho
+  if (fam === 'bolt') P.push(C('Ferrolho', 'acoGasto', 4, 46, [24, -12, -10], { axis: 'x', rot: [0, 0, -28], pivot: [0, -12, 0] }), SP('Ferrolho', 'acoGasto', [8, 8, 8], [44, -12, -24], { pivot: [0, -12, 0] }));
+  else if (fam === 'semi') P.push(B('Ferrolho', 'acoGasto', [8, 34, 10], [17 * sx, 60, 4]));
+  else P.push(C('Ferrolho', 'acoGasto', 4, 22, [24 * sx, 40, 4], { axis: 'x' }), SP('Ferrolho', 'acoGasto', [6, 6, 6], [37 * sx, 40, 4]));
+  P.push(...trigger(m, 26, -10));
+  const support = p.fore === 'vertical' ? [0, front - 22, -60] : p.mag === 'lateral' ? [-60, my, -16] : fam === 'shotgun' ? [0, front + 70, -40] : p.stock === 'inteira' ? [0, Math.min(front + p.barrel * 0.4, 260), -40] : [0, my, -50];
+  return { parts: P, muzzle: tip, support, port: [16, 30, 8] };
+}
+export function forgeDef(fam, p, name) {
+  const F = FORGE_FAMILIES[fam];
+  return { id: 'forge-' + fam, slot: F.slot, war: p.era === 'ww1' ? 1 : 2, c: 'Forja', n: name || ('Forja · ' + F.n), d: F.d, forge: { fam, p: { ...p } }, fx: { cavity: 0.4, scratches: p.era === 'moderno' ? 0.1 : 0.25, rust: p.era === 'ww1' ? 0.15 : 0 }, build: () => forgeBuild(fam, p) };
+}

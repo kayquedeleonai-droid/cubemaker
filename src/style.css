@@ -221,3 +221,10 @@ body[data-mode="char"] #btnGame{display:none!important}
 .gamehud .ghurt{position:absolute;inset:0;box-shadow:inset 0 0 160px 40px rgba(190,20,30,0.9);opacity:0;pointer-events:none}
 .gamehud .gopts{position:absolute;right:16px;top:52px;display:flex;gap:6px;pointer-events:auto}
 .gamehud .gopts select{height:28px;font-size:13px;background:rgba(18,19,23,.85)}
+
+.forgegrid{display:grid;grid-template-columns:repeat(6,1fr);gap:10px}
+.forgecard{display:flex;flex-direction:column;gap:4px;text-align:left;padding:14px;border:1px solid var(--line2);border-radius:6px;background:linear-gradient(160deg,#2a2028,#1b1c21);cursor:pointer;min-height:96px}
+.forgecard:hover{border-color:var(--acc);transform:translateY(-2px)}
+.forgecard b{font-size:17px} .forgecard small{color:var(--muted);font-size:12.5px;line-height:1.25}
+#forgeCtl .field.row select{flex:1}
+@media (max-width:1200px){.forgegrid{grid-template-columns:repeat(3,1fr)}}

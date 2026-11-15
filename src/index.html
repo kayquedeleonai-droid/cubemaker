@@ -12,7 +12,7 @@
 </head>
 <body data-step="1">
 <header>
-  <div class="logo"><svg viewBox="0 0 32 32" width="26" height="26"><path d="M16 4l11 6.5v11L16 28 5 21.5v-11z" fill="none" stroke="currentColor" stroke-width="2.4"/><path d="M5 10.5l11 6.5 11-6.5M16 17v11" stroke="currentColor" stroke-width="2" fill="none"/></svg><b>CUBE MAKER</b><span>v0.9</span></div>
+  <div class="logo"><svg viewBox="0 0 32 32" width="26" height="26"><path d="M16 4l11 6.5v11L16 28 5 21.5v-11z" fill="none" stroke="currentColor" stroke-width="2.4"/><path d="M5 10.5l11 6.5 11-6.5M16 17v11" stroke="currentColor" stroke-width="2" fill="none"/></svg><b>CUBE MAKER</b><span>v1.0</span></div>
   <nav class="steps">
     <button data-step="1"><i>1</i>Arma</button>
     <button data-step="2"><i>2</i>Modelagem</button>
@@ -32,9 +32,13 @@
 <!-- ============ ETAPA 1: escolher arma -->
 <section id="picker">
   <div class="pickwrap">
-    <h1>Escolha a arma</h1>
-    <p class="muted">Comece por um modelo pronto do arsenal ou pelos originais do AssaultCube.</p>
-    <div id="weaponCards"></div>
+    <h1>O que vamos criar?</h1>
+    <p class="muted">Monte uma arma do zero na Forja, pegue um modelo pronto do arsenal, vista um personagem ou parta dos originais do AssaultCube.</p>
+    <h2 class="arsh">Forja · criar arma do zero <small>Escolha a família e monte a arma: cano, coronha, carregador, mira, boca, bipé, baioneta e época (1ª/2ª Guerra ou moderna). Ela já sai texturizada e animada.</small></h2>
+    <div id="forgeFams" class="forgegrid"></div>
+    <h2 class="arsh">Arsenal da 1ª e 2ª Guerra <small>Modelos prontos, com textura e animação de fábrica. Cada um entra no lugar de uma arma do AC.</small></h2>
+    <nav class="cats arstabs" id="arsenalTabs"></nav>
+    <div id="arsenal" class="arsgrid"></div>
     <div class="charbox">
       <div>
         <h2 class="arsh" style="margin-top:0">Personagens · uniformes da 1ª e 2ª Guerra <small>Wehrmacht, Fallschirmjäger, Afrika Korps, US Army, USMC, britânicos, Exército Vermelho, Poilu, Tommy, Doughboy…</small></h2>
@@ -42,9 +46,6 @@
       </div>
       <label class="btn primary">Abrir pasta playermodels<input id="openChar" type="file" webkitdirectory directory multiple hidden></label>
     </div>
-    <h2 class="arsh">Arsenal da 1ª e 2ª Guerra <small>modelos prontos, com textura e grupos de animação. Cada um entra no lugar de uma arma do AC.</small></h2>
-    <nav class="cats arstabs" id="arsenalTabs"></nav>
-    <div id="arsenal" class="arsgrid"></div>
     <h2 class="arsh">Modelos originais do AssaultCube</h2>
     <div id="weaponCards"></div>
     <div class="pickalt">
@@ -136,6 +137,12 @@
 
     <!-- ETAPA 2: MODELAGEM -->
     <div class="pane weaponpane" data-pane="2">
+      <section id="forgeBox" style="display:none">
+        <h3 id="forgeTitle">Forja</h3>
+        <div class="field"><label>Nome da arma</label><input id="forgeName"></div>
+        <div id="forgeCtl"></div>
+        <p class="hint">Cada mudança reconstrói a arma (texturas e animações de fábrica são refeitas). Personalize a textura e os detalhes depois de fechar o formato.</p>
+      </section>
       <section>
         <h3>Auto-rig</h3>
         <p class="hint">As armas originais já abrem com os grupos prontos (ferrolho, carregador, gatilho, mão…). Apagou algum? Recrie aqui.</p>
