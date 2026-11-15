@@ -1,0 +1,20 @@
+{
+  "name": "cubemaker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "CUBE MAKER — editor de modelos, skins e animações de armas para AssaultCube",
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "node scripts/roundtrip.mjs assets/demo/tris_high.md3",
+    "deploy": "npm run build && wrangler deploy"
+  },
+  "dependencies": {
+    "jszip": "3.10.1",
+    "three": "0.160.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2",
+    "wrangler": "^4.0.0"
+  }
+}

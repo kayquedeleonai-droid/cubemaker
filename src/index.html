@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CUBE MAKER — editor de armas para AssaultCube</title>
+<meta name="description" content="CUBE MAKER: crie e modifique modelos MD3, skins e animações de armas do AssaultCube no navegador.">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Black+Ops+One&family=Barlow+Condensed:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='4' fill='%23262a1e'/%3E%3Cpath d='M16 5l10 6v10l-10 6-10-6V11z' fill='none' stroke='%23d9b45a' stroke-width='2.4'/%3E%3Cpath d='M6 11l10 6 10-6M16 17v10' stroke='%23d9b45a' stroke-width='2'/%3E%3C/svg%3E">
+<style>/*CSS*/</style>
+</head>
+<body>
+<header>
+  <div class="logo"><svg viewBox="0 0 32 32" width="26" height="26"><path d="M16 4l11 6.5v11L16 28 5 21.5v-11z" fill="none" stroke="currentColor" stroke-width="2.4"/><path d="M5 10.5l11 6.5 11-6.5M16 17v11" stroke="currentColor" stroke-width="2" fill="none"/></svg><b>CUBE MAKER</b><span>v0.1 · AssaultCube</span></div>
+  <div class="hbtns">
+    <label class="btn">Abrir pasta da arma<input id="openDir" type="file" webkitdirectory directory multiple hidden></label>
+    <label class="btn">Abrir arquivos<input id="openFiles" type="file" multiple accept=".md3,.cfg,.jpg,.jpeg,.png,.cubemaker" hidden></label>
+    <button class="btn" id="btnDemo">Exemplo: SMG</button>
+    <span class="sep"></span>
+    <button class="btn ic" id="btnUndo" title="Desfazer (Ctrl+Z)">↶</button>
+    <button class="btn ic" id="btnRedo" title="Refazer (Ctrl+Y)">↷</button>
+    <span class="sep"></span>
+    <button class="btn" id="btnSave" title="Ctrl+S">Salvar projeto</button>
+    <button class="btn primary" id="btnZip">Exportar pacote .zip</button>
+    <button class="btn ic" id="btnHelp" title="Ajuda">?</button>
+  </div>
+</header>
+
+<main>
+  <aside class="left">
+    <section>
+      <h3>Arma</h3>
+      <div class="field"><label>Pasta (nome no jogo)</label><input id="weaponName" value="subgun" spellcheck="false"></div>
+      <p class="hint">subgun · assault · sniper · carbine · shotgun · pistol · knife · grenade</p>
+      <div class="btnrow">
+        <button class="btn sm" id="btnMD3">tris_high.md3</button>
+        <button class="btn sm" id="btnSkin">Skin</button>
+        <button class="btn sm" id="btnCfg">md3.cfg</button>
+        <button class="btn sm" id="btnShot">Foto</button>
+      </div>
+    </section>
+    <section>
+      <h3>Partes do modelo</h3>
+      <ul id="surfs" class="list"></ul>
+    </section>
+    <section>
+      <h3>Seleção</h3>
+      <p id="selInfo" class="muted">Nada selecionado — clique no modelo</p>
+      <div class="btnrow">
+        <button class="btn sm" id="btnSelPiece" title="Inclui as ilhas encostadas">Peça inteira</button>
+        <button class="btn sm" id="btnClearSel" title="Esc">Limpar</button>
+      </div>
+      <div class="field row"><input id="groupName" placeholder="Nome do grupo (ex.: Ferrolho)"><button class="btn sm primary" id="btnGroup" disabled title="G">Criar grupo</button></div>
+    </section>
+    <section class="grow">
+      <h3>Grupos</h3>
+      <ul id="groups" class="list"></ul>
+      <div class="btnrow">
+        <button class="btn sm" id="btnSelGroup">Selecionar grupo</button>
+        <button class="btn sm" id="btnAddToGroup">Adicionar seleção</button>
+      </div>
+    </section>
+  </aside>
+
+  <div class="center">
+    <div id="viewport">
+      <canvas id="gl"></canvas>
+      <div id="brushRing"></div>
+      <div class="tools">
+        <button data-tool="nav" title="Navegar / selecionar (V)">⌖<span>Selecionar</span></button>
+        <button data-tool="material" title="Aplicar material (M)">◩<span>Material</span></button>
+        <button data-tool="brush" title="Pincel (B)">✎<span>Pincel</span></button>
+        <button data-tool="eraser" title="Borracha (E)">⌫<span>Borracha</span></button>
+        <button data-tool="picker" title="Conta-gotas (I)">◉<span>Cor</span></button>
+      </div>
+      <div class="cams">
+        <button data-cam="orbit" title="F">3D</button><button data-cam="side">Lado</button><button data-cam="top">Topo</button><button data-cam="front">Frente</button><button data-cam="fps" title="P">Visão FPS</button>
+        <label class="chk"><input type="checkbox" id="tagToggle" checked> marcadores</label>
+        <label class="chk"><input type="checkbox" id="wire3d"> wireframe</label>
+      </div>
+      <div id="stats"></div>
+      <div id="empty">
+        <div class="emptybox">
+          <svg viewBox="0 0 32 32" width="56" height="56"><path d="M16 4l11 6.5v11L16 28 5 21.5v-11z" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M5 10.5l11 6.5 11-6.5M16 17v11" stroke="currentColor" stroke-width="1.3" fill="none"/></svg>
+          <h2>Arraste a pasta de uma arma aqui</h2>
+          <p>AssaultCube&nbsp;›&nbsp;packages&nbsp;›&nbsp;models&nbsp;›&nbsp;weapons&nbsp;›&nbsp;<b>subgun</b></p>
+          <button class="btn primary" id="btnDemo2">Começar com a SMG de exemplo</button>
+        </div>
+      </div>
+    </div>
+    <div class="timeline">
+      <button class="btn ic" id="prevF" title="←">⏮</button>
+      <button class="btn ic primary" id="play" title="Espaço">▶</button>
+      <button class="btn ic" id="nextF" title="→">⏭</button>
+      <select id="animSel"></select>
+      <label class="fps">fps <input id="fps" type="number" value="12" min="1" max="60"></label>
+      <div id="frames"></div>
+    </div>
+  </div>
+
+  <aside class="right">
+    <nav class="tabs">
+      <button data-tab="tabSkin" class="on">Skin</button>
+      <button data-tab="tabMesh">Malha</button>
+      <button data-tab="tabAnim">Animação</button>
+      <button data-tab="tabCfg">Config</button>
+    </nav>
+
+    <div class="tab on" id="tabSkin">
+      <div class="uvwrap"><canvas id="uv2d"></canvas><button class="btn ic sm" id="zoomReset" title="Ajustar">⤢</button></div>
+      <div class="uvbar"><span id="skinLabel" class="muted">—</span><label class="chk"><input type="checkbox" id="wireToggle" checked> UV</label></div>
+      <section>
+        <h3>Presets Segunda Guerra</h3>
+        <div class="presets">
+          <button class="btn sm" data-preset="mp40">MP40</button>
+          <button class="btn sm" data-preset="thompson">Thompson</button>
+          <button class="btn sm" data-preset="kar98">Kar98k</button>
+          <button class="btn sm" data-preset="garand">M1 Garand</button>
+        </div>
+        <p class="hint">O preset pinta o metal base e o desgaste. Depois escolha a madeira ou baquelite e clique nas peças.</p>
+      </section>
+      <section>
+        <h3>Materiais <small>clique numa peça com a ferramenta Material · Alt = só a ilha</small></h3>
+        <div id="mats"></div>
+        <div class="btnrow">
+          <button class="btn sm" id="btnApplySel">Aplicar à seleção</button>
+          <button class="btn sm" id="btnClearMatSel">Remover da seleção</button>
+        </div>
+      </section>
+      <section id="brushBox" style="display:none">
+        <h3>Pincel</h3>
+        <div class="field row"><input type="color" id="brushColor" value="#5a3a1e">
+          <span class="swatch" data-c="#5a3a1e" style="background:#5a3a1e"></span><span class="swatch" data-c="#2b2b2b" style="background:#2b2b2b"></span><span class="swatch" data-c="#6b5a3a" style="background:#6b5a3a"></span><span class="swatch" data-c="#7a3b1c" style="background:#7a3b1c" title="ferrugem"></span><span class="swatch" data-c="#b9b4a6" style="background:#b9b4a6" title="metal gasto"></span><span class="swatch" data-c="#4e5434" style="background:#4e5434"></span>
+        </div>
+        <div id="brushSliders"></div>
+        <p class="hint">Botão direito gira a câmera enquanto pinta · [ ] muda o tamanho</p>
+      </section>
+      <section>
+        <h3>Acabamento</h3>
+        <div id="globalBox"></div>
+      </section>
+      <section>
+        <div class="btnrow">
+          <label class="btn sm">Importar imagem de skin<input type="file" id="skinFile" accept=".jpg,.jpeg,.png" hidden></label>
+          <button class="btn sm" id="btnClearPaint">Limpar pintura</button>
+          <button class="btn sm danger" id="btnResetSkin">Resetar skin</button>
+        </div>
+      </section>
+    </div>
+
+    <div class="tab" id="tabMesh">
+      <section>
+        <h3 id="meshGroup">Selecione ou crie um grupo</h3>
+        <p class="hint">Transformações fixas do grupo (valem para todos os quadros). Ex.: alongar o cano, encurtar o carregador, remover a mira moderna (●/◌ na lista de grupos).</p>
+        <div id="meshSliders"></div>
+        <div class="btnrow"><button class="btn sm" id="btnResetGroup">Zerar transformações</button></div>
+      </section>
+      <section>
+        <h3>Pivô do grupo</h3>
+        <div id="pivotSliders"></div>
+      </section>
+      <section>
+        <h3>Boca do cano (tag_muzzle)</h3>
+        <p class="hint">De onde sai o clarão do tiro. Ajuste se mudar o comprimento do cano.</p>
+        <div id="tagSliders"></div>
+      </section>
+    </div>
+
+    <div class="tab" id="tabAnim">
+      <section>
+        <h3 id="animGroup">Selecione um grupo para animar</h3>
+        <p class="hint">Escolha um quadro na linha do tempo e mexa nos controles: a chave é gravada automaticamente.</p>
+        <div id="keySliders"></div>
+        <div class="btnrow">
+          <button class="btn sm" id="btnDelKey">Apagar chave do quadro</button>
+          <button class="btn sm danger" id="btnClearKeys">Limpar chaves</button>
+        </div>
+      </section>
+      <section>
+        <h3>Animações prontas</h3>
+        <div class="field row"><label>Ferrolho</label><input id="boltDist" type="number" value="3" step="0.5" style="width:64px"><select id="boltAxis"><option value="-y">para trás (−Y)</option><option value="+y">para frente (+Y)</option><option value="-x">esquerda (−X)</option><option value="+x">direita (+X)</option></select></div>
+        <div class="btnrow">
+          <button class="btn sm primary" id="btnBolt">Ferrolho no tiro</button>
+          <button class="btn sm" id="btnTrigger">Gatilho no tiro</button>
+        </div>
+        <p class="hint">Usa o intervalo de "gun shoot" do md3.cfg. O recuo da arma inteira é feito pelo próprio jogo.</p>
+      </section>
+      <section>
+        <h3>Quadros do modelo</h3>
+        <div class="field row"><input id="frameCount" type="number" min="1" max="256" value="16" style="width:80px"><button class="btn sm" id="btnFrames">Aplicar</button></div>
+        <p class="hint">Mais quadros = animação mais suave. Atualize as linhas md3anim na aba Config.</p>
+      </section>
+    </div>
+
+    <div class="tab" id="tabCfg">
+      <section class="grow">
+        <h3>md3.cfg</h3>
+        <textarea id="cfgText" spellcheck="false"></textarea>
+        <p class="hint"><code>md3anim "nome" início quantidade [velocidade]</code><br><code>md3skin parte arquivo.jpg</code><br><code>md3emit tag_muzzle HUDMUZZLEFLASH 50 55</code></p>
+      </section>
+    </div>
+  </aside>
+</main>
+
+<div id="toast"></div>
+<div id="help">
+  <div class="helpbox">
+    <button class="btn ic close">✕</button>
+    <h2>CUBE MAKER — guia rápido</h2>
+    <ol>
+      <li><b>Abrir:</b> arraste a pasta da arma (ex.: <code>packages/models/weapons/subgun</code>) ou use "Abrir pasta da arma". A pele das mãos fica em <code>weapons/knife</code>; se não vier junto, uso a padrão.</li>
+      <li><b>Selecionar:</b> clique numa peça (V). Duplo-clique pega a peça inteira, Shift soma à seleção.</li>
+      <li><b>Skin:</b> aplique um preset (MP40, Thompson...). Depois use a ferramenta <b>Material (M)</b> e clique nas peças que viram madeira ou baquelite. Pincel (B) para detalhes, desgaste e ferrugem.</li>
+      <li><b>Malha:</b> crie um grupo (G) com as peças e mova, gire, escale ou oculte. Ótimo para alongar cano, trocar o carregador de lugar ou tirar trilhos modernos.</li>
+      <li><b>Animação:</b> com um grupo ativo, escolha o quadro e ajuste. Ou use "Ferrolho no tiro".</li>
+      <li><b>Exportar:</b> "Exportar pacote .zip" gera <code>packages/models/weapons/&lt;arma&gt;/</code> com md3, skin, cfg e créditos. Extraia em <code>Documentos\My Games\AssaultCube\v1.3\</code>.</li>
+    </ol>
+    <p class="muted">Atalhos: V M B E I · G criar grupo · F/P câmera · Espaço play · ←/→ quadros · Ctrl+Z/Y · Ctrl+S salvar</p>
+    <p class="muted">Modelos originais do AssaultCube por makkE (CC BY-NC-SA 2.5). Trabalhos derivados devem manter crédito e licença.</p>
+  </div>
+</div>
+<!--DEMO-->
+<script>/*JS*/</script>
+</body>
+</html>
