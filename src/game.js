@@ -118,7 +118,7 @@ export function createGame(ctx) {
   function muzzleWorld() { return ctx.tagWorld(); }
   function shoot(now) {
     const st = G.stats;
-    if (G.reloading || now - G.last < st.delay) return;
+    if (G.reloading || G.busy || now - G.last < st.delay) return;
     if (st.grenade) return throwGrenade(now);
     if (!st.melee && G.ammo <= 0) { sfx.click(900, 0.3); G.last = now; if (G.spare > 0) reload(); return; }
     G.last = now;
@@ -165,9 +165,24 @@ export function createGame(ctx) {
     updateHud();
   }
   function throwGrenade(now) {
-    if (G.nadeT && now - G.nadeT < 900) return; G.nadeT = now;
-    if (G.stats.grenade) { if (G.ammo <= 0) { if (G.spare <= 0) return; G.ammo++; G.spare--; } G.ammo--; playClip(/shoot/i, () => { G.clip = null; }); }
+    if (G.nadeT && now - G.nadeT < 1400) return; G.nadeT = now;
+    if (G.stats.grenade) {                                  // arma = granada: tira o pino (gun shoot) e depois arremessa (gun throw)
+      if (G.ammo <= 0) { if (G.spare <= 0) return; G.ammo++; G.spare--; }
+      G.ammo--; G.busy = true; sfx.click(3200, 0.25);
+      const afterPin = () => {
+        const hasThrow = playClip(/throw/i, () => { G.clip = null; G.hideUntil = performance.now() + 450; G.busy = false; if (G.ammo <= 0 && G.spare > 0) { G.ammo++; G.spare--; } updateHud(); });
+        G.keepLast = hasThrow;
+        const a = ctx.anims().find(x => /throw/i.test(x.name)), rel = hasThrow ? Math.max(1, Math.round(a.count * 0.2)) / ctx.fps() * 1000 : 0;
+        setTimeout(() => { sfx.swish(); spawnGrenade(0); }, rel);
+        if (!hasThrow) { G.busy = false; }
+      };
+      if (!playClip(/shoot/i, () => { G.clip = null; afterPin(); })) afterPin();
+      updateHud(); return;
+    }
     sfx.click(3200, 0.25); setTimeout(() => sfx.swish(), 250);
+    spawnGrenade(120);
+  }
+  function spawnGrenade(delay) {
     const geo = new THREE.SphereGeometry(1.1, 12, 10), mat = new THREE.MeshStandardMaterial({ color: 0x4e5434, roughness: 0.7 });
     const n = new THREE.Mesh(geo, mat), dir = new THREE.Vector3(0, 0.25, -1).applyQuaternion(camera.quaternion).normalize();
     n.position.copy(camera.position).add(new THREE.Vector3(2, -2, -3).applyQuaternion(camera.quaternion));
@@ -178,7 +193,7 @@ export function createGame(ctx) {
         vel.y -= 120 * dt; n.position.addScaledVector(vel, dt); n.rotation.x += dt * 8;
         if (n.position.y < -21) { n.position.y = -21; vel.y = -vel.y * 0.35; vel.x *= 0.6; vel.z *= 0.6; if (bounced++ < 3) sfx.metal(0, 0.5); }
       }, end() { world.remove(n); explode(n.position.clone()); } });
-    }, G.stats.grenade ? 380 : 120);
+    }, delay);
     updateHud();
   }
   function explode(p) {
@@ -254,7 +269,7 @@ export function createGame(ctx) {
     // animação do modelo
     if (G.clip) {
       const f = Math.floor((now - G.clip.t0) / 1000 * ctx.fps());
-      if (f >= G.clip.count) { const cb = G.clip.onEnd; G.clip = null; ctx.setFrame(idleFrame()); cb && cb(true); }
+      if (f >= G.clip.count) { const cb = G.clip.onEnd, last = G.clip.start + G.clip.count - 1, keep = G.keepLast; G.clip = null; G.keepLast = false; cb && cb(true); if (!G.clip) ctx.setFrame(keep ? last : idleFrame()); }
       else if (G.clip.start + f !== ctx.getFrame()) ctx.setFrame(G.clip.start + f);
     }
     // câmera
@@ -273,6 +288,8 @@ export function createGame(ctx) {
       .multiply(new THREE.Matrix4().makeRotationY(-G.sway * 0.03))
       .multiply(baseRot);
     root.matrix.copy(tmpM); root.matrixWorldNeedsUpdate = true;
+    root.visible = !(G.hideUntil && now < G.hideUntil);
+    if (G.hideUntil && now >= G.hideUntil) { G.hideUntil = 0; ctx.setFrame(idleFrame()); }
     // clarão
     if (flash.visible && now - flash.userData.t > 45) { flash.visible = false; }
     flashLight.intensity *= Math.pow(0.0001, dt);
@@ -291,7 +308,7 @@ export function createGame(ctx) {
     if (!ctx.model()) return ctx.toast('Abra uma arma primeiro', 'warn');
     sfx.init();
     G.stats = WEAPON_STATS[ctx.weapon()] || WEAPON_STATS.subgun;
-    G.ammo = G.stats.mag; G.spare = G.stats.spare; G.score = 0; G.shots = 0; G.kick = 0; G.camKick = 0; G.yaw = 0; G.pitch = 0; G.clip = null; G.reloading = false;
+    G.ammo = G.stats.mag; G.spare = G.stats.spare; G.busy = false; G.hideUntil = 0; G.keepLast = false; G.score = 0; G.shots = 0; G.kick = 0; G.camKick = 0; G.yaw = 0; G.pitch = 0; G.clip = null; G.reloading = false;
     saved = { pos: camera.position.clone(), quat: camera.quaternion.clone(), target: controls.target.clone(), fov: camera.fov, bg: scene.background, auto: root.matrixAutoUpdate };
     buildRange(); world.visible = true; ctx.setGameMode(true);
     controls.enabled = false; camera.fov = 70; camera.updateProjectionMatrix();
@@ -309,7 +326,7 @@ export function createGame(ctx) {
     window.removeEventListener('keydown', onKey, true); canvas.removeEventListener('contextmenu', ctxMenu);
     fx.splice(0).forEach(e => e.end && e.end());
     world.visible = false; hud && hud.remove(); hud = null;
-    root.matrixAutoUpdate = true; root.position.set(0, 0, 0); root.rotation.set(-Math.PI / 2, 0, 0); root.scale.set(1, 1, 1); root.updateMatrix();
+    root.visible = true; root.matrixAutoUpdate = true; root.position.set(0, 0, 0); root.rotation.set(-Math.PI / 2, 0, 0); root.scale.set(1, 1, 1); root.updateMatrix();
     camera.position.copy(saved.pos); camera.quaternion.copy(saved.quat); camera.fov = saved.fov; camera.updateProjectionMatrix();
     controls.target.copy(saved.target); controls.enabled = true; scene.background = saved.bg;
     ctx.setGameMode(false); ctx.setFrame(0);

@@ -110,7 +110,7 @@ async function loadWeapon({ md3Buf, cfgText, skinImages, weaponName, project, sk
   model = m; m.nfOrig = m.nf; meshes = []; skins = [];
   S.originalMD3 = md3Buf; S.cfg = (cfgText || defaultCfg(m)).replace(/\r\n/g, '\n'); S.weapon = weaponName || S.weapon;
   S.global.detail = 1;
-  S.originalCfg = cfgText || null; S.skinSources = skinSources || []; S.acOriginal = origin || null; S.preset = null; S.presetM = null;
+  S.originalCfg = cfgText || null; S.skinSources = skinSources || []; S.acOriginal = origin || null; S.preset = null; S.presetM = null; S.rigid = null;
   S.islandMat = m.surfaces.map(() => new Map()); S.groups = []; S.gi = -1; S.sel = { si: -1, isl: new Set() };
   S.tagOffset = [0, 0, 0]; S.frame = 0; S.modifiedSkins = new Set(); undoStack.length = 0; redoStack.length = 0;
   S.prims = []; S.animRoot = false; S.decals = []; S.di = -1;
@@ -411,7 +411,11 @@ function computeSurface(si, f) {
   const R = rootMatrix(f);
   const mats = S.groups.map((g, gi) => {
     if (g.si !== si) return null;
-    let M = groupMatrix(g, f, gi); if (R) M = R.clone().multiply(M);
+    let M = groupMatrix(g, f, gi);
+    if (S.rigid && S.rigid[f] && s.name === 'weapon') {      // anima no espaço da peça que já se move (granada/faca na mão)
+      const F = new THREE.Matrix4().fromArray(S.rigid[f]); M = F.clone().multiply(M).multiply(F.clone().invert());
+    }
+    if (R) M = R.clone().multiply(M);
     return { M, N: new THREE.Matrix3().getNormalMatrix(M), id: M.equals(I4) };
   });
   const rootM = R ? { M: R, N: new THREE.Matrix3().getNormalMatrix(R), id: R.equals(I4) } : null;
@@ -921,10 +925,10 @@ const GEN = {
     // arma inteira: inclina para mostrar o carregador
     clearKeys(S.root, a, b);
     setKey(S.root, a, {});
-    setKey(S.root, F(0.14), { t: [1.5, -1, 1.2], r: [8, tilt, -4], e: 'smooth' });
-    setKey(S.root, F(0.42), { t: [1.6, -1.2, 1.0], r: [7, tilt + 4, -4], e: 'smooth' });
-    setKey(S.root, F(0.74), { t: [1.4, -0.6, 1.3], r: [9, tilt - 3, -3], e: 'smooth' });
-    setKey(S.root, F(0.77), { t: [1.4, -0.3, 1.5], r: [10.5, tilt - 3, -3], e: 'out' });   // "clique" do carregador
+    setKey(S.root, F(0.14), { t: [-1.6, 0.5, 2.8], r: [12, tilt, -6], e: 'smooth' });
+    setKey(S.root, F(0.42), { t: [-1.8, 0.4, 2.6], r: [11, tilt + 4, -6], e: 'smooth' });
+    setKey(S.root, F(0.74), { t: [-1.5, 0.6, 2.9], r: [13, tilt - 3, -5], e: 'smooth' });
+    setKey(S.root, F(0.77), { t: [-1.5, 0.9, 3.1], r: [14.5, tilt - 3, -5], e: 'out' });   // "clique" do carregador
     setKey(S.root, F(0.86), { t: [0.6, -0.8, 0.6], r: [4, tilt * 0.5, -2], e: 'smooth' });
     setKey(S.root, b, { e: 'back' });
     // carregador sai, some, volta novo e encaixa
@@ -960,9 +964,9 @@ const GEN = {
     g.keys = {};
     setKey(g, a, { s: 0 });
     setKey(g, a + 1, { s: 1, e: 'step' });
-    setKey(g, a + Math.max(2, Math.round((b - a) * 0.45)), { t: [7 * sx, -2.5, 4.5], r: [160, 40, 220 * sx], e: 'out' });
-    setKey(g, b - 1, { t: [15 * sx, -5, -2], r: [380, 90, 520 * sx], e: 'in' });
-    setKey(g, b, { t: [15 * sx, -5, -2], s: 0, e: 'step' });
+    setKey(g, a + Math.max(2, Math.round((b - a) * 0.45)), { t: [6 * sx, 0.6, 3.2], r: [160, 40, 220 * sx], e: 'out' });
+    setKey(g, b - 1, { t: [13 * sx, -0.8, -3], r: [380, 90, 520 * sx], e: 'in' });
+    setKey(g, b, { t: [13 * sx, -0.8, -3], s: 0, e: 'step' });
     return gi;
   },
   // ---- específicos dos modelos do arsenal
@@ -1008,10 +1012,11 @@ const GEN = {
   stripper() {                                  // pente de lâminas empurrado por cima (Kar98k, Mosin, Garand…)
     const c = clip(/reload/i); if (!c) return; const [a, b] = c, L = b - a, F = p => a + Math.round(p * L);
     let gi = S.groups.findIndex(g => /^pente$/i.test(g.name));
-    if (gi < 0) { const pos = presetPoint(0, -10, 34); gi = addPrimitive({ type: 'box', name: 'clip', size: [0.6, 2.4, 1.8], pos, mat: 'latao' }, { silent: true }).gi; S.groups[gi].name = 'Pente'; }
+    if (gi < 0) { const pos = presetPoint(0, -10, 26); gi = addPrimitive({ type: 'box', name: 'clip', size: [0.3, 1.5, 1.1], pos, mat: 'latao' }, { silent: true }).gi; S.groups[gi].name = 'Pente'; }
+    clearKeys(S.root, a, b); setKey(S.root, a, {}); setKey(S.root, F(0.15), { t: [-1.4, 0, 2.2], r: [10, 18, -4] }); setKey(S.root, F(0.75), { t: [-1.3, 0, 2.1], r: [10, 16, -4] }); setKey(S.root, b, { e: 'back' });
     const g = S.groups[gi]; g.keys = {};
-    setKey(g, a, { s: 0 }); setKey(g, F(0.3), { t: presetDir(0, 0, 160), s: 0 });
-    setKey(g, F(0.32), { t: presetDir(0, 0, 160), s: 1, e: 'step' }); setKey(g, F(0.45), { t: presetDir(0, 0, 50), e: 'out' });
+    setKey(g, a, { s: 0 }); setKey(g, F(0.3), { t: presetDir(0, 0, 70), s: 0 });
+    setKey(g, F(0.32), { t: presetDir(0, 0, 70), s: 1, e: 'step' }); setKey(g, F(0.45), { t: presetDir(0, 0, 25), e: 'out' });
     setKey(g, F(0.62), { t: presetDir(0, 0, 0), e: 'in' }); setKey(g, F(0.66), { t: presetDir(0, 0, 0), s: 0, e: 'step' });
   },
   shellLoad({ count = 4 } = {}) {               // escopeta: cartuchos entrando um a um por baixo
@@ -1053,7 +1058,7 @@ const GEN = {
     setKey(g, F(0.62), { t: [0, -pull, 0], r: [0, lift, 0] });
     setKey(g, F(0.74), { r: [0, lift, 0], e: 'out' });                // empurra
     setKey(g, F(0.84), { e: 'out' });                                 // abaixa
-    setKey(S.root, F(0.3), {}); setKey(S.root, F(0.45), { t: [0.8, -0.5, 0.6], r: [2, 10, 0] }); setKey(S.root, F(0.8), { t: [0.6, -0.3, 0.4], r: [1, 8, 0] }); setKey(S.root, b, { e: 'smooth' });
+    setKey(S.root, F(0.25), {}); setKey(S.root, F(0.4), { t: [-1.2, -0.6, 1.6], r: [6, 22, 2] }); setKey(S.root, F(0.78), { t: [-1.1, -0.4, 1.4], r: [5, 20, 2] }); setKey(S.root, b, { e: 'smooth' });
   },
   knife({ reach = hasBakedAnim() ? 0.35 : 1 } = {}) {
     const [a, b] = clip(/shoot/i) || [0, model.nf - 1], L = b - a, F = p => a + Math.round(p * L);
@@ -1424,7 +1429,7 @@ async function saveProject() {
     md3: bufToB64(S.originalMD3),
     skins: skins.map((sk, i) => ({ file: S.skinFiles[i], orig: sk.orig.toDataURL('image/png'), overlay: sk.overlay.toDataURL('image/png') })),
     islandMat: S.islandMat.map(m => [...m]), groups: S.groups.map(g => ({ ...g, isl: [...g.isl] })),
-    global: S.global, tagOffset: S.tagOffset, modified: [...S.modifiedSkins], root: S.root, prims: S.prims, fx: S.fx, decals: S.decals, preset: S.preset, presetM: S.presetM
+    global: S.global, tagOffset: S.tagOffset, modified: [...S.modifiedSkins], root: S.root, prims: S.prims, fx: S.fx, decals: S.decals, preset: S.preset, presetM: S.presetM, rigid: S.rigid
   };
   download(`${S.weapon}.cubemaker`, new Blob([JSON.stringify(proj)], { type: 'application/json' }));
   toast('Projeto salvo', 'ok');
@@ -1444,7 +1449,7 @@ function applyProject(p) {
   S.gi = S.groups.length ? 0 : -1;
   S.global = { ...S.global, ...p.global }; S.tagOffset = p.tagOffset || [0, 0, 0];
   if (p.root) S.root = p.root;
-  if (p.preset) S.preset = p.preset; if (p.presetM) S.presetM = p.presetM;
+  if (p.preset) S.preset = p.preset; if (p.presetM) S.presetM = p.presetM; if (p.rigid) S.rigid = p.rigid;
   if (p.fx) S.fx = { ...S.fx, ...p.fx }; S.decals = p.decals || [];
   S.modifiedSkins = new Set(p.modified || []);
   p.skins.forEach((s, i) => { if (s.file) S.skinFiles[i] = s.file; });
@@ -1697,6 +1702,7 @@ async function loadPreset(id) {
     Object.assign(S.global, { wear: 0.4, age: 0.25, dirt: 0.25 }); S.fx = { ...S.fx, cavity: 0.4, scratches: 0, rust: 0, dust: 0, burn: 0, blood: 0, ...(def.fx || {}) };
     if (def.fx && def.fx.dirt != null) S.global.dirt = def.fx.dirt;
     S.preset = { id: def.id, n: def.n, war: def.war, c: def.c }; S.presetM = M0.toArray();
+    S.rigid = frames.some(F => !F.equals(new THREE.Matrix4())) ? frames.map(F => F.toArray()) : null;
     applyPresetAnim(def, true);
     model.surfaces.forEach((_, i) => S.modifiedSkins.add(i));
     skins.forEach((_, i) => composite(i));
@@ -2108,13 +2114,13 @@ function buildStaticUI() {
   syncers.push(slider(ab, 'Escala (0 = some)', 0, 2, 0.01, kGet('s', 0, 1), kSet('s', 0), { undo: 'chave', reset: 1 }));
   // geradores
   const gr = $('#genRecoil');
-  slider(gr, 'Coice', 0, 8, 0.1, () => GOPT.recoil.kick, v => GOPT.recoil.kick = v, { reset: 2.2 });
-  slider(gr, 'Subida do cano', 0, 25, 0.5, () => GOPT.recoil.rise, v => GOPT.recoil.rise = v, { reset: 6 });
-  slider(gr, 'Lateral', 0, 3, 0.1, () => GOPT.recoil.side, v => GOPT.recoil.side = v, { reset: 1 });
-  slider(gr, 'Ferrolho (dist.)', 0, 8, 0.1, () => GOPT.bolt.dist, v => GOPT.bolt.dist = v, { reset: 3 });
+  slider(gr, 'Coice', 0, 8, 0.1, () => GOPT.recoil.kick, v => { GOPT.recoil.kick = v; liveGen('recoil'); }, { reset: 2.2, undo: 'recuo' });
+  slider(gr, 'Subida do cano', 0, 25, 0.5, () => GOPT.recoil.rise, v => { GOPT.recoil.rise = v; liveGen('recoil'); }, { reset: 6, undo: 'recuo' });
+  slider(gr, 'Lateral', 0, 3, 0.1, () => GOPT.recoil.side, v => { GOPT.recoil.side = v; liveGen('recoil'); }, { reset: 1, undo: 'recuo' });
+  slider(gr, 'Ferrolho (dist.)', 0, 8, 0.1, () => GOPT.bolt.dist, v => { GOPT.bolt.dist = v; liveGen('bolt'); }, { reset: 3, undo: 'ferrolho' });
   const rl = $('#genReload');
-  slider(rl, 'Inclinação', 0, 60, 1, () => GOPT.reload.tilt, v => GOPT.reload.tilt = v, { reset: 22 });
-  slider(rl, 'Queda do carreg.', 0, 30, 0.5, () => GOPT.reload.drop, v => GOPT.reload.drop = v, { reset: 14 });
+  slider(rl, 'Inclinação', 0, 60, 1, () => GOPT.reload.tilt, v => { GOPT.reload.tilt = v; liveGen('reload'); }, { reset: 22, undo: 'recarga' });
+  slider(rl, 'Queda do carreg.', 0, 30, 0.5, () => GOPT.reload.drop, v => { GOPT.reload.drop = v; liveGen('reload'); }, { reset: 14, undo: 'recarga' });
   // banco de animações
   const bank = $('#animBank');
   Object.entries(ANIM_BANK).forEach(([k, P]) => {
@@ -2131,6 +2137,20 @@ function buildStaticUI() {
   });
 }
 const GOPT = { recoil: { kick: 2.2, rise: 6, side: 1 }, bolt: { dist: 3, axis: '-y' }, reload: { tilt: 22, drop: 14 } };
+// os controles dos geradores aplicam na hora e mostram o quadro onde o efeito aparece
+let liveT = 0;
+function liveGen(name) {
+  if (!model || S.mode === 'char') return;
+  clearTimeout(liveT);
+  liveT = setTimeout(() => {
+    const opts = { ...(GOPT[name] || {}) };
+    if (name === 'recoil') opts.side = opts.side || 0.0001;
+    GEN[name](opts);
+    const c = name === 'reload' ? clip(/reload/i) : clip(/shoot/i);
+    if (c) { const f = name === 'reload' ? c[0] + Math.round((c[1] - c[0]) * 0.4) : name === 'bolt' ? c[0] + Math.max(1, Math.round((c[1] - c[0]) * 0.3)) : Math.min(c[1], c[0] + 1); S.playing = false; updatePlayBtn(); setFrame(f); }
+    updateAll();
+  }, 120);
+}
 function updateGlobalUI() { syncers.forEach(s => s.sync()); }
 
 // ---------------------------------------------------------------- UI: atualização
