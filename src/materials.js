@@ -16,10 +16,11 @@ export const MATS = {
   dunkelgelb:  { n: 'Dunkelgelb (areia)',    c: [164, 140, 86], p: 'paint',    wear: 1,   wearColor: [110, 108, 100] },
   couro:       { n: 'Couro',                 c: [100, 64, 36],  p: 'leather',  wear: 0.6, wearColor: [150, 110, 72] },
   cobre:       { n: 'Cobre (projétil)',      c: [178, 100, 58], p: 'metal',    wear: 0.3, wearColor: [220, 150, 100] },
+  azulTampa:   { n: 'Tampa azul (Eihandgranate)', c: [52, 84, 140], p: 'paint', wear: 0.6, wearColor: [170, 170, 165] },
   tracer:      { n: 'Traçante (brilho)',     c: [255, 214, 120], p: 'paint',   wear: 0 },
   lona:        { n: 'Lona cáqui',            c: [140, 124, 90], p: 'cloth',    wear: 0.3, wearColor: [170, 156, 120] },
 };
-export const MAT_ORDER = ['acoOxidado', 'acoPreto', 'parkCinza', 'parkVerde', 'acoGasto', 'latao', 'nogueira', 'faia', 'madeiraClara', 'baquelite', 'oliva', 'feldgrau', 'dunkelgelb', 'couro', 'lona', 'cobre'];
+export const MAT_ORDER = ['acoOxidado', 'acoPreto', 'parkCinza', 'parkVerde', 'acoGasto', 'latao', 'nogueira', 'faia', 'madeiraClara', 'baquelite', 'oliva', 'feldgrau', 'dunkelgelb', 'couro', 'lona', 'cobre', 'azulTampa'];
 
 function hash(x, y) {
   let h = Math.imul(x | 0, 374761393) ^ Math.imul(y | 0, 668265263);
@@ -96,6 +97,23 @@ export const TEX = {
     const n = fbm(x * 0.07, y * 0.07);
     return n > 0.66 ? [80, 78, 74] : mix([140, 36, 30], [116, 30, 26], fbm(x * 0.03, y * 0.03));
   },
+  abacaxi(x, y) {                       // Mk 2: blocos em relevo com sulcos
+    const a = ((x % 16) + 16) % 16, b = ((y % 12) + 12) % 12;
+    const groove = a < 2.5 || b < 2.5, n = fbm(x * 0.08, y * 0.08);
+    return groove ? [38, 42, 26] : mix([92, 98, 58], [78, 84, 48], n);
+  },
+  f1seg(x, y) {                         // F1: segmentos mais largos, verde-escuro
+    const a = ((x % 20) + 20) % 20, b = ((y % 16) + 16) % 16;
+    return (a < 3 || b < 3) ? [30, 34, 26] : mix([70, 80, 56], [58, 66, 46], fbm(x * 0.06, y * 0.06));
+  },
+  mills(x, y) {                         // Mills / Kugel: ferro escuro segmentado
+    const a = ((x % 18) + 18) % 18, b = ((y % 14) + 14) % 14;
+    return (a < 3 || b < 3) ? [22, 22, 22] : mix([66, 64, 58], [52, 50, 46], fbm(x * 0.07, y * 0.07));
+  },
+  perfurado(x, y) {                     // chapa perfurada (camisa de cano)
+    const a = ((x % 14) + 14) % 14 - 7, b = ((y % 14) + 14) % 14 - 7;
+    return a * a + b * b < 14 ? [8, 8, 8] : mix([52, 54, 58], [40, 42, 46], fbm(x * 0.05, y * 0.05));
+  },
   img(x, y, m) {                        // textura importada (repete)
     const I = m.img, ix = ((Math.floor(x * m.scale) % I.w) + I.w) % I.w, iy = ((Math.floor(y * m.scale) % I.h) + I.h) % I.h, j = (iy * I.w + ix) * 4;
     return [I.data[j], I.data[j + 1], I.data[j + 2]];
@@ -112,10 +130,14 @@ const BANK = {
   recartilhado: { n: 'Recartilhado', tex: 'recartilhado', cat: 'detalhe', wear: 0.3 },
   quadriculado: { n: 'Quadriculado (grip)', tex: 'quadriculado', cat: 'detalhe', wear: 0.3 },
   laminado:     { n: 'Madeira laminada', tex: 'laminado', cat: 'madeira', wear: 0.6, wearColor: [190, 140, 92] },
+  abacaxi:      { n: 'Ferro fundido "abacaxi"', tex: 'abacaxi', cat: 'detalhe', wear: 0.8, wearColor: [140, 140, 130] },
+  f1seg:        { n: 'Ferro segmentado F1', tex: 'f1seg', cat: 'detalhe', wear: 0.8, wearColor: [140, 140, 130] },
+  mills:        { n: 'Ferro segmentado (Mills)', tex: 'mills', cat: 'detalhe', wear: 0.7, wearColor: [150, 148, 140] },
+  perfurado:    { n: 'Chapa perfurada', tex: 'perfurado', cat: 'metal', wear: 0.8, wearColor: [170, 170, 165] },
   ebano:        { n: 'Madeira escura', tex: 'ebano', cat: 'madeira', wear: 0.6, wearColor: [130, 90, 60] },
   tigre:        { n: 'Madeira tigrada', tex: 'tigre', cat: 'madeira', wear: 0.6, wearColor: [196, 150, 100] },
 };
-const CAT_OF = { acoOxidado: 'metal', acoPreto: 'metal', parkCinza: 'metal', parkVerde: 'metal', acoGasto: 'metal', latao: 'metal', cobre: 'metal', nogueira: 'madeira', faia: 'madeira', madeiraClara: 'madeira', baquelite: 'detalhe', oliva: 'pintura', feldgrau: 'pintura', dunkelgelb: 'pintura', couro: 'detalhe', lona: 'detalhe', tracer: 'detalhe' };
+const CAT_OF = { acoOxidado: 'metal', acoPreto: 'metal', parkCinza: 'metal', parkVerde: 'metal', acoGasto: 'metal', latao: 'metal', cobre: 'metal', nogueira: 'madeira', faia: 'madeira', madeiraClara: 'madeira', baquelite: 'detalhe', azulTampa: 'pintura', oliva: 'pintura', feldgrau: 'pintura', dunkelgelb: 'pintura', couro: 'detalhe', lona: 'detalhe', tracer: 'detalhe' };
 Object.entries(CAT_OF).forEach(([k, c]) => MATS[k].cat = c);
 Object.entries(BANK).forEach(([k, m]) => {
   let r = 0, g = 0, b = 0, n = 0;                                     // cor média (miniatura e desgaste)

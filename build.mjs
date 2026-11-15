@@ -9,4 +9,5 @@ const html = fs.readFileSync('src/index.html', 'utf8').replace('/*CSS*/', () => 
 fs.mkdirSync('dist', { recursive: true });
 fs.writeFileSync('dist/index.html', html);
 fs.cpSync('assets/weapons', 'dist/weapons', { recursive: true });
+if (fs.existsSync('assets/presets')) fs.cpSync('assets/presets', 'dist/presets', { recursive: true });
 console.log('dist/index.html', (html.length / 1024).toFixed(0) + ' KB · weapons/ copiado');

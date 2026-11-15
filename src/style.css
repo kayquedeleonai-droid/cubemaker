@@ -186,3 +186,12 @@ body.gaming main{grid-template-columns:1fr}
 .gamehud .gscore b{color:#fff;font-size:22px;margin-left:6px}
 .gamehud .gexit{position:absolute;right:16px;top:12px;pointer-events:auto}
 @media (max-width:1200px){main{grid-template-columns:220px 1fr 340px}#weaponCards{grid-template-columns:repeat(3,1fr)}.steps button{padding:0 9px}}
+
+.arsh{margin:26px 0 10px;font-size:22px;font-weight:700;letter-spacing:.5px}
+.arsh small{display:block;font-size:14px;font-weight:400;color:var(--muted);margin-top:2px}
+.arstabs button{height:30px;font-size:13.5px;padding:0 12px}
+.arsgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+.wcard p{margin:6px 0 0;font-size:13px;color:var(--muted);line-height:1.25}
+.wcard .tag.war1{color:#e8c08a;border-color:#7a5a2a}
+.wcard .tag.war2{color:#f0a0b0;border-color:#7a3a4a}
+@media (max-width:1200px){.arsgrid{grid-template-columns:repeat(3,1fr)}}

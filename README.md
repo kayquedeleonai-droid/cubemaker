@@ -8,7 +8,17 @@ Editor de armas para **AssaultCube** que roda no navegador. Abre os modelos MD3 
 
 O trabalho segue um **pipeline em 5 etapas**:
 
-1. **Arma**: as 8 armas originais do AC vêm embutidas (faca, pistola, carabina, escopeta, SMG, fuzil de assalto, sniper, granada). Também abre uma pasta, arquivos soltos ou um projeto.
+1. **Arma**
+   - **Arsenal da 1ª e 2ª Guerra**: 39 modelos prontos, com textura e grupos de animação, que entram no lugar da arma do AC.
+     - Granadas: Stielhandgranate 24/17, Mk 2, F1, Mills Nº 36, Eihandgranate 39, Kugelhandgranate, RGD-33
+     - Facas e baionetas: M3, Mk I, Kampfmesser 42, S84/98, Fairbairn-Sykes
+     - Pistolas: Luger, 1911, P38, C96, Webley, Nagant
+     - SMGs: MP40, Thompson, PPSh-41, Sten, MP18
+     - Fuzis de assalto: StG 44, BAR, FG 42
+     - Fuzis de ferrolho: Kar98k, Gewehr 98, Mosin, Springfield, Enfield Nº 4
+     - Carabinas: M1 Carbine, Garand, G43, SVT-40, SMLE
+     - Escopetas: Winchester 1897, Ithaca 37
+   - As 8 armas originais do AC vêm embutidas (faca, pistola, carabina, escopeta, SMG, fuzil de assalto, sniper, granada). Também abre uma pasta, arquivos soltos ou um projeto.
 2. **Modelagem**
    - **Auto-rig**: as 8 armas originais já abrem com os grupos prontos (ferrolho, carregador, gatilho, mão, telha do pump, pino, luneta, cano). O Kar98k e a carabina ganham uma alavanca de ferrolho nova.
    - Receitas da Segunda Guerra (MP40, Thompson, StG 44, Kar98k, M1 Carbine, Winchester 1897, Luger, 1911, M3, Stielhandgranate).
@@ -57,6 +67,7 @@ Código-fonte em `src/`:
 | `md3.js` | leitura e escrita de MD3, ilhas UV e parser do `md3.cfg` |
 | `materials.js` | materiais e ruído procedural |
 | `main.js` | app: 3D (three.js), pipeline, skin, camadas, decalques, grupos, motor de animação, exportação e instalação |
+| `presets.js` | arsenal: modelos procedurais WWI/WWII, atlas UV e encaixe no slot |
 | `game.js` | Modo Jogo (estande de tiro, efeitos e som) |
 | `index.html`, `style.css` | interface |
 
