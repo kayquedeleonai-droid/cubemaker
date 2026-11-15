@@ -4,7 +4,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import JSZip from 'jszip';
 import { createGame } from './game.js';
 import { ARSENAL, buildPreset, atlasCanvas } from './presets.js';
-import { parseMD3, buildMD3, computeIslands, parseCfg, encodeNormal } from './md3.js';
+import { parseMD3, parseMD2, buildMD3, computeIslands, parseCfg, encodeNormal } from './md3.js';
 import { MATS, MAT_ORDER, fbm, TEX, CATS, registerImageTexture } from './materials.js';
 
 const $ = s => document.querySelector(s);
@@ -19,7 +19,7 @@ let meshes = [];           // malhas three.js por superfície
 const S = {
   weapon: 'subgun', cfg: '', frame: 0, playing: false, animIdx: -1, fps: 25,
   tool: 'nav', mat: 'nogueira', brush: { color: '#5a3a1e', size: 18, opacity: 0.6, hard: 0.4 },
-  global: { wear: 0.35, age: 0.25, dirt: 0.25, bright: 0, contrast: 1 },
+  global: { wear: 0.35, age: 0.25, dirt: 0.25, bright: 0, contrast: 1, detail: 1 },
   islandMat: [],           // por superfície: Map(ilha -> chave do material)
   groups: [], gi: -1,      // grupos de peças
   sel: { si: -1, isl: new Set() },
@@ -101,13 +101,15 @@ function frameCamera(mode = 'orbit') {
 }
 
 // ---------------------------------------------------------------- carregamento do modelo
-async function loadWeapon({ md3Buf, cfgText, skinImages, weaponName, project, skinSources, origin }) {
-  const m = parseMD3(md3Buf);
+async function loadWeapon({ md3Buf, cfgText, skinImages, weaponName, project, skinSources, origin, modelObj }) {
+  const m = modelObj || parseMD3(md3Buf);
+  S.mode = m.md2 ? 'char' : 'weapon'; document.body.dataset.mode = S.mode; if (!m.md2) S.char = null;
   m.surfaces.forEach(computeIslands);
   meshes.forEach(x => { root.remove(x); x.geometry.dispose(); x.material.dispose(); });
   skins.forEach(sk => sk.texture && sk.texture.dispose());
   model = m; m.nfOrig = m.nf; meshes = []; skins = [];
   S.originalMD3 = md3Buf; S.cfg = (cfgText || defaultCfg(m)).replace(/\r\n/g, '\n'); S.weapon = weaponName || S.weapon;
+  S.global.detail = 1;
   S.originalCfg = cfgText || null; S.skinSources = skinSources || []; S.acOriginal = origin || null; S.preset = null;
   S.islandMat = m.surfaces.map(() => new Map()); S.groups = []; S.gi = -1; S.sel = { si: -1, isl: new Set() };
   S.tagOffset = [0, 0, 0]; S.frame = 0; S.modifiedSkins = new Set(); undoStack.length = 0; redoStack.length = 0;
@@ -139,7 +141,7 @@ async function loadWeapon({ md3Buf, cfgText, skinImages, weaponName, project, sk
   if (project) { (project.prims || []).forEach(p => addPrimitive(p, { silent: true, noGroup: true })); applyProject(project); }
   else skins.forEach((_, i) => composite(i));
   $('#weaponName').value = S.weapon; $('#cfgText').value = S.cfg;
-  if (!project) applyRig({ silent: true });
+  if (!project && !m.md2) applyRig({ silent: true });
   updateAll(); frameCamera('orbit');
   toast(`Carregado: ${S.weapon} — ${m.surfaces.length} partes, ${m.nf} quadros`, 'ok');
 }
@@ -267,7 +269,7 @@ function composite(si) {
     const isl = sk.id[i], m = isl >= 0 ? matOf[isl] : null;
     if (m) {
       const L = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-      let k = Math.pow(Math.min(L / sk.mean[isl], 3.2), 0.85);
+      let k = Math.pow(Math.min(L / sk.mean[isl], 3.2), 0.85); k = 1 + (k - 1) * (G.detail ?? 1);
       if (m.tex) { const c = TEX[m.tex](x, y, m); k *= 0.95 + 0.1 * sk.fine[i]; r = c[0] * k; g = c[1] * k; b = c[2] * k; }
       else { k *= patternFactor(m, sk, i, x, y, isl); r = m.c[0] * k; g = m.c[1] * k; b = m.c[2] * k; }
       if (G.wear > 0 && m.wear) {                       // bordas gastas mostrando metal claro / madeira gasta
@@ -721,7 +723,7 @@ function setFrameCount(n, silent) {
   S.frame = Math.min(S.frame, n - 1);
   if (!silent) { updateAll(); toast(`Modelo agora tem ${n} quadros`); }
 }
-function anims() { return parseCfg(S.cfg).anims; }
+function anims() { return model && model.md2 ? model.md2Anims : parseCfg(S.cfg).anims; }
 function playRange() {
   const a = anims()[S.animIdx];
   if (!a) return [0, model.nf - 1];
@@ -1125,6 +1127,9 @@ function exportMD3() { return buildMD3(model, finalModel()); }
 function skinBlob(si, type = 'image/jpeg') {
   return new Promise(r => skins[si].result.toBlob(r, type, 0.93));
 }
+function charCredits() {
+  return `Skin de personagem feita no CUBE MAKER (uso pessoal)\n\nModelo de jogador: S.A.S. de Darren "HitmanDaz[MT]" Pattenden, adaptado por makkE para o AssaultCube.\nA licença do modelo permite skins derivadas apenas para uso pessoal.\n\nSkins por apelido: ative em Configurações > Jogabilidade > Skins personalizadas de jogador.\n`;
+}
 function credits() {
   return `Arma modificada com CUBE MAKER v${VERSION} (cubemaker.kayquedeleon.app)\n\n` +
     (S.preset ? `Modelo da arma: ${S.preset.n} (${S.preset.c}), modelado no CUBE MAKER\nMãos e animações originais do slot: makkE (Markus Bekel) — AssaultCube\n` : `Modelo e textura originais: makkE (Markus Bekel) — AssaultCube\n`) +
@@ -1139,6 +1144,7 @@ function skinPath(si) {
 }
 // arquivos que a arma modificada ocupa no jogo
 async function packageFiles() {
+  if (S.mode === 'char') return [{ path: charTarget(), data: await skinBlob(0) }, { path: 'packages/models/playermodels/custom/CUBEMAKER_LEIA-ME.txt', data: new Blob([charCredits()]) }];
   const dir = `packages/models/weapons/${weaponDir()}/`;
   const out = [{ path: dir + 'tris_high.md3', data: new Blob([exportMD3()]) }, { path: dir + 'md3.cfg', data: new Blob([S.cfg]) }];
   for (let si = 0; si < skins.length; si++) {
@@ -1150,6 +1156,10 @@ async function packageFiles() {
 }
 // cópia fiel dos arquivos originais carregados
 async function originalFiles() {
+  if (S.mode === 'char') {                                   // a skin original que estava nesse caminho (se veio da pasta aberta)
+    const rel = charTarget().replace('packages/models/playermodels/', ''), f = charFiles && charFiles.get(rel);
+    return f ? [{ path: charTarget(), data: f }] : [];
+  }
   if (S.acOriginal && S.acOriginal.files) return S.acOriginal.files;
   if (S.preset && SLOTS[S.weapon]) {                       // projeto reaberto de um modelo do arsenal: busca os originais do slot
     try {
@@ -1167,6 +1177,7 @@ async function exportZip() {
   if (!model) return;
   const zip = new JSZip(), w = weaponDir();
   for (const f of await packageFiles()) zip.file(f.path, f.data);
+  if (S.mode === 'char') { const blob = await zip.generateAsync({ type: 'blob' }); download('cubemaker_personagem.zip', blob); toast('Pacote .zip exportado', 'ok'); return; }
   zip.file('LEIA-ME_CUBEMAKER.txt',
     `Como instalar:\n1) Extraia este zip dentro da pasta home do AssaultCube:\n   Documentos\\My Games\\AssaultCube\\v1.3\\\n` +
     `   (ou direto na pasta de instalação, fazendo backup antes)\n2) Abra o jogo — a arma "${w}" será substituída.\n\n${credits()}`);
@@ -1250,6 +1261,7 @@ async function installToGame() {
   const btn = $('#btnInstall'); btn.disabled = true; btn.textContent = 'Instalando…';
   try {
     const files = await packageFiles(), stamp = stampNow();
+    if (S.mode === 'char') $('#charPath').textContent = charTarget();
     const log = { acao: 'instalar', quando: new Date().toISOString(), arma: weaponDir(), pasta: gameDir.name, originais: [], backup: [], gravados: [] };
     await backupBefore(files.map(f => f.path), stamp, log);
     for (const f of files) { await writeAt(f.path, f.data); log.gravados.push(f.path); }
@@ -1598,6 +1610,113 @@ function buildArsenalUI() {
   });
 }
 
+
+// ================================================================ PERSONAGENS (uniformes)
+// regiões da skin do modelo de jogador do AC (ilhas UV, conferidas no mapa UV)
+const REGIONS = {
+  tunica: { n: 'Túnica / jaqueta', isl: [1, 2] }, mangas: { n: 'Mangas e mãos', isl: [18, 19, 20, 21, 22, 23, 24] },
+  calca: { n: 'Calça', isl: [0, 3, 4] }, perneiras: { n: 'Perneiras / cano da bota', isl: [10, 11, 14, 15] },
+  botas: { n: 'Botas', isl: [12, 13, 16, 17] }, cabeca: { n: 'Capacete / capuz', isl: [5, 8] }, rosto: { n: 'Rosto', isl: [6, 7, 9] },
+};
+const UNIFORMS = [
+  { id: 'wehrmacht', war: 2, side: 'Eixo', n: 'Wehrmacht (Heer)', d: 'Túnica M36 feldgrau, botas de cano alto e Stahlhelm.', r: { tunica: 'feldgrauLa', mangas: 'feldgrauLa', calca: 'feldgrauEsc', perneiras: 'couroPreto', botas: 'couroPreto', cabeca: 'feldgrau' }, team: 'cla' },
+  { id: 'fallschirm', war: 2, side: 'Eixo', n: 'Fallschirmjäger', d: 'Bata de salto em camuflagem Splinter sobre o feldgrau.', r: { tunica: 'splinter', mangas: 'splinter', calca: 'feldgrauLa', perneiras: 'couroPreto', botas: 'couroPreto', cabeca: 'feldgrau' }, team: 'cla' },
+  { id: 'dak', war: 2, side: 'Eixo', n: 'Afrika Korps', d: 'Brim tropical, botas de lona e capacete areia.', r: { tunica: 'tanDAK', mangas: 'tanDAK', calca: 'tanDAK', perneiras: 'perneiraLona', botas: 'couroMarrom', cabeca: 'dunkelgelb' }, fx: { dust: 0.5 }, team: 'cla' },
+  { id: 'ostfront', war: 2, side: 'Eixo', n: 'Frente Leste (inverno)', d: 'Agasalho branco de inverno, capacete caiado.', r: { tunica: 'brancoInv', mangas: 'brancoInv', calca: 'brancoInv', perneiras: 'couroPreto', botas: 'couroPreto', cabeca: 'inverno' }, fx: { dirt: 0.35 }, team: 'cla' },
+  { id: 'usarmy', war: 2, side: 'Aliados', n: 'US Army 1944', d: 'Jaqueta M41, calça de lã OD, perneiras de lona e capacete M1.', r: { tunica: 'khakiM41', mangas: 'khakiM41', calca: 'odLa', perneiras: 'perneiraLona', botas: 'couroMarrom', cabeca: 'oliva' }, team: 'rvsf' },
+  { id: 'usmc', war: 2, side: 'Aliados', n: 'USMC Pacífico', d: 'Uniforme "frogskin" camuflado dos fuzileiros.', r: { tunica: 'frogskinT', mangas: 'frogskinT', calca: 'frogskinT', perneiras: 'perneiraLona', botas: 'couroMarrom', cabeca: 'frogskinT' }, fx: { dirt: 0.4 }, team: 'rvsf' },
+  { id: 'british', war: 2, side: 'Aliados', n: 'Exército Britânico', d: 'Battledress cáqui, perneiras de lona e capacete Brodie.', r: { tunica: 'khakiBD', mangas: 'khakiBD', calca: 'khakiBD', perneiras: 'perneiraLona', botas: 'couroPreto', cabeca: 'oliva' }, team: 'rvsf' },
+  { id: 'rkka', war: 2, side: 'Aliados', n: 'Exército Vermelho', d: 'Gimnastiorka cáqui, calça escura, botas de couro.', r: { tunica: 'sovKhaki', mangas: 'sovKhaki', calca: 'sovEsc', perneiras: 'couroPreto', botas: 'couroPreto', cabeca: 'oliva' }, team: 'rvsf' },
+  { id: 'rkkawinter', war: 2, side: 'Aliados', n: 'Exército Vermelho (inverno)', d: 'Telogreika acolchoada para o inverno russo.', r: { tunica: 'telogreika', mangas: 'telogreika', calca: 'telogreika', perneiras: 'couroPreto', botas: 'couroPreto', cabeca: 'oliva' }, team: 'rvsf' },
+  { id: 'heer1916', war: 1, side: 'Potências Centrais', n: 'Alemanha 1916', d: 'Feldgrau da Grande Guerra com o primeiro Stahlhelm.', r: { tunica: 'feldgrauLa', mangas: 'feldgrauLa', calca: 'feldgrauLa', perneiras: 'couroMarrom', botas: 'couroMarrom', cabeca: 'feldgrau' }, fx: { dirt: 0.45, rust: 0.1 }, team: 'cla' },
+  { id: 'poilu', war: 1, side: 'Aliados', n: 'França "Poilu" 1915', d: 'Azul-horizonte, perneiras e capacete Adrian.', r: { tunica: 'horizonte', mangas: 'horizonte', calca: 'horizonte', perneiras: 'perneira', botas: 'couroMarrom', cabeca: 'horizonte' }, fx: { dirt: 0.45 }, team: 'rvsf' },
+  { id: 'tommy', war: 1, side: 'Aliados', n: 'Britânico 1916 "Tommy"', d: 'Cáqui de serviço, perneiras enroladas e capacete Brodie.', r: { tunica: 'khakiBD', mangas: 'khakiBD', calca: 'khakiBD', perneiras: 'perneira', botas: 'couroMarrom', cabeca: 'oliva' }, fx: { dirt: 0.45 }, team: 'rvsf' },
+  { id: 'doughboy', war: 1, side: 'Aliados', n: 'EUA 1918 "Doughboy"', d: 'Lã verde-oliva, perneiras e capacete Brodie.', r: { tunica: 'odLa', mangas: 'odLa', calca: 'odLa', perneiras: 'perneira', botas: 'couroMarrom', cabeca: 'oliva' }, fx: { dirt: 0.45 }, team: 'rvsf' },
+];
+let charFiles = null;   // arquivos da pasta playermodels do usuário (Map caminho → File)
+async function openCharacterFolder(fileList) {
+  const files = [...fileList];
+  const rel = f => (f.webkitRelativePath || f.name).replace(/\\/g, '/');
+  const md2 = files.find(f => /(^|\/)tris\.md2$/i.test(rel(f)) && !/weapons|world|menu/i.test(rel(f))) || files.find(f => /\.md2$/i.test(f.name));
+  if (!md2) throw new Error('Selecione a pasta packages/models/playermodels do seu AssaultCube');
+  const root = rel(md2).replace(/tris\.md2$/i, '');
+  charFiles = new Map(files.filter(f => /\.(jpe?g|png)$/i.test(f.name)).map(f => [rel(f).slice(root.length), f]));
+  const base = charFiles.get('skin.jpg') || charFiles.get('RVSF/01.jpg') || [...charFiles.values()][0];
+  await loadCharacter(await md2.arrayBuffer(), base);
+}
+async function loadCharacter(md2Buf, skinFile) {
+  const m = parseMD2(md2Buf);
+  let img = await loadImage(await fileToDataURL(skinFile));
+  if (img.width < 640) { const c = document.createElement('canvas'); c.width = img.width * 2; c.height = img.height * 2; const x = c.getContext('2d'); x.imageSmoothingQuality = 'high'; x.drawImage(img, 0, 0, c.width, c.height); img = c; }
+  await loadWeapon({ modelObj: m, md2Buf, cfgText: '', skinImages: [img], weaponName: 'personagem', skinSources: [skinFile] });
+  S.mode = 'char'; document.body.dataset.mode = 'char';
+  S.char = { target: 'team', team: 'rvsf', slot: '01', nick: '', nickTeam: 'ffa', multi: false, baseName: skinFile.name };
+  S.skinFiles = ['personagem.jpg']; S.global.detail = 0.55;
+  S.animIdx = Math.max(0, anims().findIndex(a => /stand/i.test(a.name)));
+  updateAll(); frameCamera('orbit'); buildCharUI(); goStep(2);
+  toast('Personagem carregado — escolha um uniforme', 'ok');
+}
+function applyUniform(id) {
+  const U = UNIFORMS.find(u => u.id === id); if (!U || !model) return;
+  snapshot('uniforme ' + U.n);
+  const mp = S.islandMat[0];
+  Object.entries(U.r).forEach(([reg, mat]) => REGIONS[reg].isl.forEach(i => i < model.surfaces[0].nIsl && mp.set(i, mat)));
+  Object.assign(S.global, { wear: 0.3, age: 0.2, dirt: 0.25, detail: 0.55 }); S.fx = { ...S.fx, cavity: 0.4, scratches: 0, rust: 0, dust: 0, burn: 0, blood: 0, ...(U.fx || {}) };
+  if (U.fx && U.fx.dirt != null) S.global.dirt = U.fx.dirt;
+  S.char.uniform = U.id; S.char.team = U.team; S.modifiedSkins.add(0);
+  composite(0); updateAll(); buildCharUI();
+  toast(`Uniforme: ${U.n}`, 'ok');
+}
+function setRegion(reg, mat) {
+  snapshot('região'); REGIONS[reg].isl.forEach(i => mat ? S.islandMat[0].set(i, mat) : S.islandMat[0].delete(i)); S.modifiedSkins.add(0); composite(0); buildCharUI();
+}
+function regionCenter(reg) {
+  const s = model.surfaces[0], sk = skins[0], isl = REGIONS[reg].isl[0];
+  let u = 0, v = 0, n = 0; s.islVerts[isl].forEach(x => { u += s.st[x * 2]; v += s.st[x * 2 + 1]; n++; });
+  return [u / n * sk.w, v / n * sk.h];
+}
+function addInsignia(kind) {
+  if (!model || S.mode !== 'char') return;
+  snapshot('insígnia'); const sk = skins[0], sc = sk.w / 640;
+  const base = { id: Math.floor(Math.random() * 1e6), si: 0, font: 'Stardos Stencil', style: 'paint', wear: 0.3, rot: 0, flip: 0 };
+  let d;
+  if (kind === 'nome') { const [x, y] = regionCenter('tunica'); d = { ...base, kind: 'text', text: $('#charName').value || 'SOLDADO', size: 22 * sc, color: '#d8d0b8', x, y: y - 40 * sc, font: 'Special Elite' }; }
+  else if (kind === 'divisas') { const [x, y] = regionCenter('mangas'); d = { ...base, kind: 'chevron', text: '', size: 30 * sc, color: '#c9b27a', x, y: y - 50 * sc }; }
+  else if (kind === 'numero') { const [x, y] = regionCenter('cabeca'); d = { ...base, kind: 'text', text: $('#charNum').value || '7', size: 30 * sc, color: '#e8e2d0', x, y }; }
+  else if (kind === 'estrela') { const [x, y] = regionCenter('cabeca'); d = { ...base, kind: 'star', text: '', size: 34 * sc, color: S.char.team === 'cla' ? '#b03030' : '#e8e2d0', x, y }; }
+  else if (kind === 'faixa') { const [x, y] = regionCenter('mangas'); d = { ...base, kind: 'bar', text: '', size: 46 * sc, color: '#b8a070', x, y, rot: 90 }; }
+  S.decals.push(d); S.di = S.decals.length - 1; S.modifiedSkins.add(0);
+  document.fonts && document.fonts.load(`20px "${d.font}"`).then(() => refreshResult(0)).catch(() => { });
+  refreshResult(0); updateDecalsUI(); toast('Insígnia adicionada — ajuste em Textura › Decalques', 'ok');
+}
+function charTarget() {
+  const c = S.char;
+  if (c.target === 'nick') { const nick = (c.nick || 'jogador').replace(/[^\w\-\[\]]/g, ''); return `packages/models/playermodels/custom/${nick}${c.multi ? '__' : '_'}${c.nickTeam}.jpg`; }
+  return `packages/models/playermodels/${c.team.toUpperCase()}/${c.slot}.jpg`;
+}
+function buildCharUI() {
+  const box = $('#uniforms'); if (!box) return; box.innerHTML = '';
+  UNIFORMS.forEach(U => {
+    const b = document.createElement('button'); b.className = 'unicard' + (S.char && S.char.uniform === U.id ? ' on' : '');
+    const sw = ['cabeca', 'tunica', 'calca', 'perneiras', 'botas'].map(r => { const m = MATS[U.r[r]]; return m ? `<i style="background:rgb(${m.c.map(v => v | 0)})"></i>` : ''; }).join('');
+    b.innerHTML = `<div class="sw">${sw}</div><span class="tag war${U.war}">${U.war === 1 ? '1ª GUERRA' : '2ª GUERRA'} · ${U.side}</span><b>${U.n}</b><small>${U.d}</small>`;
+    b.onclick = () => applyUniform(U.id); box.appendChild(b);
+  });
+  const rg = $('#regions'); rg.innerHTML = '';
+  const opts = ['<option value="">— original —</option>', ...CATS.filter(([k]) => k !== 'minhas' || MAT_ORDER.some(m => MATS[m] && MATS[m].cat === 'minhas')).map(([k, n]) => `<optgroup label="${n}">${MAT_ORDER.filter(m => MATS[m] && MATS[m].cat === k).map(m => `<option value="${m}">${MATS[m].n}</option>`).join('')}</optgroup>`)].join('');
+  Object.entries(REGIONS).forEach(([k, R]) => {
+    const row = document.createElement('div'); row.className = 'field row';
+    row.innerHTML = `<label style="width:120px">${R.n}</label><select>${opts}</select>`;
+    const sel = row.querySelector('select'); sel.value = model ? (S.islandMat[0].get(R.isl[0]) || '') : '';
+    sel.onchange = () => setRegion(k, sel.value || null); rg.appendChild(row);
+  });
+  if (S.char) {
+    $('#charTargetTeam').checked = S.char.target === 'team'; $('#charTargetNick').checked = S.char.target === 'nick';
+    $('#charTeam').value = S.char.team; $('#charSlot').value = S.char.slot; $('#charNick').value = S.char.nick; $('#charNickTeam').value = S.char.nickTeam; $('#charMulti').checked = S.char.multi;
+    $('#charPath').textContent = charTarget();
+  }
+}
+
 // ---------------------------------------------------------------- presets de textura
 const PRESETS = {
   mp40: { name: 'MP40', base: 'acoOxidado', global: { wear: 0.4, age: 0.2, dirt: 0.3 }, fx: { cavity: 0.45, scratches: 0.25 } },
@@ -1835,7 +1954,7 @@ function deleteCustomTex(k) {
 function buildStaticUI() {
   buildMatGrid();
   const gl = $('#globalBox');
-  [['Desgaste nas bordas', 'wear', 0, 1, 0.01, 0.35], ['Envelhecimento', 'age', 0, 1, 0.01, 0.25], ['Sujeira geral', 'dirt', 0, 1, 0.01, 0.25], ['Brilho', 'bright', -0.4, 0.4, 0.01, 0], ['Contraste', 'contrast', 0.5, 1.8, 0.01, 1]]
+  [['Detalhe da skin original', 'detail', 0, 1.5, 0.01, 1], ['Desgaste nas bordas', 'wear', 0, 1, 0.01, 0.35], ['Envelhecimento', 'age', 0, 1, 0.01, 0.25], ['Sujeira geral', 'dirt', 0, 1, 0.01, 0.25], ['Brilho', 'bright', -0.4, 0.4, 0.01, 0], ['Contraste', 'contrast', 0.5, 1.8, 0.01, 1]]
     .forEach(([l, k, a, b, st, rs]) => syncers.push(slider(gl, l, a, b, st, () => S.global[k], v => { S.global[k] = v; queueComposite(); }, { undo: 'ajuste ' + l, reset: rs })));
   const fb = $('#fxBox');
   [['Sujeira nas cavidades', 'cavity'], ['Arranhões', 'scratches'], ['Ferrugem', 'rust'], ['Poeira e terra (por cima)', 'dust'], ['Pólvora no cano', 'burn'], ['Sangue', 'blood']]
@@ -1985,6 +2104,7 @@ function goStep(n) {
   if (n > 1 && !model) { toast('Escolha uma arma primeiro', 'warn'); n = 1; }
   if (game.on) game.exit();
   S.step = n; document.body.dataset.step = n;
+  $('.steps button[data-step="2"]').lastChild.textContent = S.mode === 'char' ? 'Uniforme' : 'Modelagem';
   $$('.steps button').forEach(b => { const k = +b.dataset.step; b.classList.toggle('on', k === n); b.classList.toggle('done', !!model && k < n); b.disabled = k > 1 && !model; });
   $('#stepPrev').style.visibility = n > 2 ? '' : 'hidden';
   $('#stepNext').textContent = n === 5 ? 'Instalar no jogo' : 'Próximo →';
@@ -2045,6 +2165,10 @@ function bindUI() {
     toast(`Peça criada: grupo "${S.groups[r.gi].name}". Ajuste com Mover/Girar/Escala.`, 'ok');
   });
   $('#btnRig').onclick = () => applyRig();
+  $('#openChar').onchange = e => openCharacterFolder(e.target.files).catch(err => toast(err.message, 'err'));
+  $$('[data-ins]').forEach(b => b.onclick = () => addInsignia(b.dataset.ins));
+  const charSync = () => { if (!S.char) return; S.char.target = $('#charTargetNick').checked ? 'nick' : 'team'; S.char.team = $('#charTeam').value; S.char.slot = $('#charSlot').value; S.char.nick = $('#charNick').value.trim(); S.char.nickTeam = $('#charNickTeam').value; S.char.multi = $('#charMulti').checked; $('#charPath').textContent = charTarget(); };
+  ['#charTargetTeam', '#charTargetNick', '#charTeam', '#charSlot', '#charNick', '#charNickTeam', '#charMulti'].forEach(id => $(id).addEventListener('input', charSync));
   $('#groupParent').onchange = e => { const g = S.groups[S.gi]; if (!g) return; snapshot('hierarquia'); g.parent = +e.target.value; updateAll(); };
   $('#btnHideGroup').onclick = () => { const g = S.groups[S.gi]; if (!g) return; snapshot('ocultar'); g.hidden = !g.hidden; updateAll(); };
   $('#btnResetGroup').onclick = () => { const g = S.groups[S.gi]; if (!g) return; snapshot('resetar grupo'); g.t = Z3(); g.r = Z3(); g.s = [1, 1, 1]; updateAll(); };
@@ -2159,7 +2283,7 @@ function thumbnail(w = 480, h = 300, hideHands = false) {
   meshes.forEach(m => m.visible = true); updateColors(); camera.position.copy(saved.p); controls.target.copy(saved.t); controls.update();
   return out.toDataURL('image/png');
 }
-window.CM = { loadPreset, ARSENAL, _i: { THREE, get meshes() { return meshes; }, camera, renderer, scene, root, grid, tagMarker, pivotMarker, controls, resize }, debugBox: () => meshes.map(m => { m.geometry.computeBoundingBox(); const b = m.geometry.boundingBox; return [m.visible, b.min.toArray().map(v => +v.toFixed(1)), b.max.toArray().map(v => +v.toFixed(1)), m.geometry.index.count, m.geometry.attributes.position.array.slice(0, 3).join(',')]; }), thumbnail, S, get model() { return model; }, get skins() { return skins; }, loadBundled, loadDemo, exportMD3, createGroup, selectIsland, assignMaterial, applyPreset, applyAnimBank, runGen, setFrame, frameCamera, setTool, parseMD3, undo, captureState, goStep, game, placeDecal, addPrimitive, assembleClips, interpKey };
+window.CM = { loadCharacter, applyUniform, addInsignia, UNIFORMS, charTarget, loadPreset, ARSENAL, _i: { THREE, get meshes() { return meshes; }, camera, renderer, scene, root, grid, tagMarker, pivotMarker, controls, resize }, debugBox: () => meshes.map(m => { m.geometry.computeBoundingBox(); const b = m.geometry.boundingBox; return [m.visible, b.min.toArray().map(v => +v.toFixed(1)), b.max.toArray().map(v => +v.toFixed(1)), m.geometry.index.count, m.geometry.attributes.position.array.slice(0, 3).join(',')]; }), thumbnail, S, get model() { return model; }, get skins() { return skins; }, loadBundled, loadDemo, exportMD3, createGroup, selectIsland, assignMaterial, applyPreset, applyAnimBank, runGen, setFrame, frameCamera, setTool, parseMD3, undo, captureState, goStep, game, placeDecal, addPrimitive, assembleClips, interpKey };
 {
   const h = location.hash.slice(1);
   if (h === 'demo') loadBundled('subgun'); else if (WEAPONS[h]) loadBundled(h);

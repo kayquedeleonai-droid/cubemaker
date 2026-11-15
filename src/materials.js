@@ -114,6 +114,24 @@ export const TEX = {
     const a = ((x % 14) + 14) % 14 - 7, b = ((y % 14) + 14) % 14 - 7;
     return a * a + b * b < 14 ? [8, 8, 8] : mix([52, 54, 58], [40, 42, 46], fbm(x * 0.05, y * 0.05));
   },
+  cloth(x, y, m) {                      // tecido de lã/sarja: trama fina + variação
+    const w = ((x + y) % 3 === 0 ? 0.92 : 1) * (((x - y) % 4 + 4) % 4 === 0 ? 0.96 : 1);
+    const n = 0.9 + 0.2 * fbm(x * 0.05, y * 0.05);
+    return [m.c[0] * w * n, m.c[1] * w * n, m.c[2] * w * n];
+  },
+  quilted(x, y, m) {                    // telogreika acolchoada
+    const r = ((y % 16) + 16) % 16, seam = r < 2 ? 0.55 : 0.85 + 0.25 * Math.sin(r / 16 * Math.PI);
+    return TEX.cloth(x, y, m).map(v => v * seam);
+  },
+  puttee(x, y, m) {                     // perneiras enroladas
+    const r = (((x + y * 2) % 14) + 14) % 14;
+    return TEX.cloth(x, y, m).map(v => v * (r < 2 ? 0.6 : 1));
+  },
+  leather(x, y, m) { const n = 0.85 + 0.3 * fbm(x * 0.2, y * 0.2); return [m.c[0] * n, m.c[1] * n, m.c[2] * n]; },
+  frogskin(x, y) {                      // camuflagem "frogskin" dos fuzileiros (Pacífico)
+    const a = fbm(x * 0.022, y * 0.022), b = fbm(x * 0.03 + 9, y * 0.03 + 4);
+    return a > 0.62 ? [62, 70, 44] : b > 0.6 ? [128, 120, 84] : a < 0.38 ? [96, 104, 66] : [108, 118, 78];
+  },
   img(x, y, m) {                        // textura importada (repete)
     const I = m.img, ix = ((Math.floor(x * m.scale) % I.w) + I.w) % I.w, iy = ((Math.floor(y * m.scale) % I.h) + I.h) % I.h, j = (iy * I.w + ix) * 4;
     return [I.data[j], I.data[j + 1], I.data[j + 2]];
@@ -146,7 +164,19 @@ Object.entries(BANK).forEach(([k, m]) => {
   MAT_ORDER.push(k);
 });
 MAT_ORDER.splice(MAT_ORDER.indexOf('tracer'), MAT_ORDER.includes('tracer') ? 1 : 0);
-export const CATS = [['metal', 'Metais'], ['madeira', 'Madeiras'], ['pintura', 'Pinturas'], ['camo', 'Camuflagem'], ['detalhe', 'Detalhes'], ['minhas', 'Minhas']];
+// tecidos e couros de uniforme (personagens)
+const CLOTH = {
+  feldgrauLa: ['Lã feldgrau', [88, 94, 82], 'cloth'], feldgrauEsc: ['Lã feldgrau escura', [66, 70, 64], 'cloth'],
+  khakiM41: ['Jaqueta M41 (cáqui)', [150, 132, 96], 'cloth'], odLa: ['Lã verde-oliva (OD)', [96, 86, 60], 'cloth'],
+  khakiBD: ['Battledress (cáqui)', [126, 106, 72], 'cloth'], sovKhaki: ['Gimnastiorka (cáqui)', [140, 130, 88], 'cloth'],
+  sovEsc: ['Calça soviética', [96, 90, 64], 'cloth'], horizonte: ['Azul-horizonte (França)', [114, 134, 152], 'cloth'],
+  brancoInv: ['Branco de inverno', [216, 214, 204], 'cloth'], tanDAK: ['Brim tropical (DAK)', [178, 156, 112], 'cloth'],
+  telogreika: ['Telogreika acolchoada', [92, 94, 60], 'quilted'], perneira: ['Perneiras de lã', [128, 110, 76], 'puttee'],
+  perneiraLona: ['Perneiras de lona', [156, 144, 108], 'cloth'], couroPreto: ['Couro preto', [36, 32, 30], 'leather'],
+  couroMarrom: ['Couro marrom', [94, 60, 36], 'leather'], frogskinT: ['Frogskin (camuflagem)', [100, 106, 70], 'frogskin'],
+};
+Object.entries(CLOTH).forEach(([k, [n, c, tex]]) => { MATS[k] = { n, c, tex, cat: 'tecido', p: 'tex', wear: tex === 'leather' ? 0.5 : 0.25, wearColor: tex === 'leather' ? [120, 100, 80] : [c[0] * 1.2, c[1] * 1.2, c[2] * 1.15] }; MAT_ORDER.push(k); });
+export const CATS = [['tecido', 'Tecidos'], ['metal', 'Metais'], ['madeira', 'Madeiras'], ['pintura', 'Pinturas'], ['camo', 'Camuflagem'], ['detalhe', 'Detalhes'], ['minhas', 'Minhas']];
 export function registerImageTexture(key, name, imageData, scale = 1) {
   const d = imageData.data; let r = 0, g = 0, b = 0;
   for (let i = 0; i < d.length; i += 4) { r += d[i]; g += d[i + 1]; b += d[i + 2]; }

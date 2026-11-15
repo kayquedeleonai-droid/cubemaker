@@ -187,3 +187,47 @@ export function parseCfg(text) {
   });
   return out;
 }
+
+// ---------------------------------------------------------------- MD2 (modelo de jogador do AC: só leitura, para pintar a skin)
+export function parseMD2(buf) {
+  const dv = new DataView(buf);
+  if (readStr(dv, 0, 4) !== 'IDP2') throw new Error('Não é um arquivo MD2 válido');
+  const g = o => dv.getInt32(o, true);
+  const skinW = g(8), skinH = g(12), frameSize = g(16), nXYZ = g(24), nST = g(28), nTris = g(32), nFrames = g(40);
+  const ofsST = g(48), ofsTris = g(52), ofsFrames = g(56);
+  const st = []; for (let i = 0; i < nST; i++) st.push([dv.getInt16(ofsST + i * 4, true) / skinW, dv.getInt16(ofsST + i * 4 + 2, true) / skinH]);
+  // vértices do MD3-like: um por par (posição, uv)
+  const key = new Map(), vXYZ = [], vST = [], tris = [];
+  for (let t = 0; t < nTris; t++) {
+    const o = ofsTris + t * 12, out = [];
+    for (let k = 0; k < 3; k++) {
+      const xi = dv.getUint16(o + k * 2, true), si = dv.getUint16(o + 6 + k * 2, true), kk = xi * 65536 + si;
+      let idx = key.get(kk); if (idx === undefined) { idx = vXYZ.length; key.set(kk, idx); vXYZ.push(xi); vST.push(si); }
+      out.push(idx);
+    }
+    tris.push(out[0], out[2], out[1]);
+  }
+  const nv = vXYZ.length, S = { name: 'body', flags: 0, nv, ntri: nTris, shaders: [], tris: new Int32Array(tris), st: new Float32Array(nv * 2), pos: [], nrm: [], nraw: [] };
+  vST.forEach((si, i) => { S.st[i * 2] = st[si][0]; S.st[i * 2 + 1] = st[si][1]; });
+  const frames = [];
+  for (let f = 0; f < nFrames; f++) {
+    const o = ofsFrames + f * frameSize;
+    const sc = [0, 1, 2].map(k => dv.getFloat32(o + k * 4, true)), tr = [0, 1, 2].map(k => dv.getFloat32(o + 12 + k * 4, true));
+    const name = readStr(dv, o + 24, 16); frames.push({ name, min: [0, 0, 0], max: [0, 0, 0], origin: [0, 0, 0], radius: 0 });
+    const P = new Float32Array(nv * 3);
+    for (let i = 0; i < nv; i++) { const q = o + 40 + vXYZ[i] * 4; for (let k = 0; k < 3; k++) P[i * 3 + k] = dv.getUint8(q + k) * sc[k] + tr[k]; }
+    // normais suaves calculadas da malha
+    const N = new Float32Array(nv * 3);
+    for (let t = 0; t < nTris; t++) {
+      const a = tris[t * 3], b = tris[t * 3 + 1], c = tris[t * 3 + 2];
+      const ux = P[b * 3] - P[a * 3], uy = P[b * 3 + 1] - P[a * 3 + 1], uz = P[b * 3 + 2] - P[a * 3 + 2], vx = P[c * 3] - P[a * 3], vy = P[c * 3 + 1] - P[a * 3 + 1], vz = P[c * 3 + 2] - P[a * 3 + 2];
+      const nx = -(uy * vz - uz * vy), ny = -(uz * vx - ux * vz), nz = -(ux * vy - uy * vx);
+      for (const v of [a, b, c]) { N[v * 3] += nx; N[v * 3 + 1] += ny; N[v * 3 + 2] += nz; }
+    }
+    for (let i = 0; i < nv; i++) { const l = Math.hypot(N[i * 3], N[i * 3 + 1], N[i * 3 + 2]) || 1; N[i * 3] /= l; N[i * 3 + 1] /= l; N[i * 3 + 2] /= l; }
+    S.pos.push(P); S.nrm.push(N); S.nraw.push(new Uint16Array(nv));
+  }
+  // animações pelo nome dos quadros (stand01, run03 …)
+  const anims = []; frames.forEach((fr, i) => { const n = fr.name.replace(/\d+$/, ''); const last = anims[anims.length - 1]; if (last && last.name === n) last.count++; else anims.push({ name: n, start: i, count: 1, speed: 0 }); });
+  return { version: 8, name: 'player', flags: 0, nf: nFrames, frames, tagNames: [], tags: frames.map(() => []), surfaces: [S], md2: true, skinW, skinH, md2Anims: anims };
+}

@@ -12,7 +12,7 @@
 </head>
 <body data-step="1">
 <header>
-  <div class="logo"><svg viewBox="0 0 32 32" width="26" height="26"><path d="M16 4l11 6.5v11L16 28 5 21.5v-11z" fill="none" stroke="currentColor" stroke-width="2.4"/><path d="M5 10.5l11 6.5 11-6.5M16 17v11" stroke="currentColor" stroke-width="2" fill="none"/></svg><b>CUBE MAKER</b><span>v0.5</span></div>
+  <div class="logo"><svg viewBox="0 0 32 32" width="26" height="26"><path d="M16 4l11 6.5v11L16 28 5 21.5v-11z" fill="none" stroke="currentColor" stroke-width="2.4"/><path d="M5 10.5l11 6.5 11-6.5M16 17v11" stroke="currentColor" stroke-width="2" fill="none"/></svg><b>CUBE MAKER</b><span>v0.6</span></div>
   <nav class="steps">
     <button data-step="1"><i>1</i>Arma</button>
     <button data-step="2"><i>2</i>Modelagem</button>
@@ -35,6 +35,13 @@
     <h1>Escolha a arma</h1>
     <p class="muted">Comece por um modelo pronto do arsenal ou pelos originais do AssaultCube.</p>
     <div id="weaponCards"></div>
+    <div class="charbox">
+      <div>
+        <h2 class="arsh" style="margin-top:0">Personagens · uniformes da 1ª e 2ª Guerra <small>Wehrmacht, Fallschirmjäger, Afrika Korps, US Army, USMC, britânicos, Exército Vermelho, Poilu, Tommy, Doughboy…</small></h2>
+        <p class="hint">O modelo de jogador do AC tem licença só para uso pessoal, então o CUBE MAKER lê o boneco direto do seu jogo: escolha a pasta <code>AssaultCube\packages\models\playermodels</code>.</p>
+      </div>
+      <label class="btn primary">Abrir pasta playermodels<input id="openChar" type="file" webkitdirectory directory multiple hidden></label>
+    </div>
     <h2 class="arsh">Arsenal da 1ª e 2ª Guerra <small>modelos prontos, com textura e grupos de animação. Cada um entra no lugar de uma arma do AC.</small></h2>
     <nav class="cats arstabs" id="arsenalTabs"></nav>
     <div id="arsenal" class="arsgrid"></div>
@@ -107,8 +114,28 @@
   <!-- ============ painel da etapa (direita) -->
   <aside class="right">
 
+    <!-- ETAPA 2 (personagem): UNIFORME -->
+    <div class="pane charpane" data-pane="2">
+      <section>
+        <h3>Uniformes prontos</h3>
+        <div id="uniforms"></div>
+      </section>
+      <section>
+        <h3>Peça por peça</h3>
+        <div id="regions"></div>
+        <div id="charDetail"></div>
+      </section>
+      <section>
+        <h3>Insígnias rápidas</h3>
+        <div class="field row"><input id="charName" placeholder="Nome no peito" value="SILVA"><button class="btn sm" data-ins="nome">Nome</button></div>
+        <div class="field row"><input id="charNum" placeholder="Nº no capacete" value="7"><button class="btn sm" data-ins="numero">Número</button></div>
+        <div class="btnrow"><button class="btn sm" data-ins="divisas">Divisas na manga</button><button class="btn sm" data-ins="estrela">Estrela no capacete</button><button class="btn sm" data-ins="faixa">Braçadeira</button></div>
+        <p class="hint">Ajuste posição, cor e desgaste em Textura › Decalques.</p>
+      </section>
+    </div>
+
     <!-- ETAPA 2: MODELAGEM -->
-    <div class="pane" data-pane="2">
+    <div class="pane weaponpane" data-pane="2">
       <section>
         <h3>Auto-rig</h3>
         <p class="hint">As armas originais já abrem com os grupos prontos (ferrolho, carregador, gatilho, mão…). Apagou algum? Recrie aqui.</p>
@@ -222,7 +249,13 @@
     </div>
 
     <!-- ETAPA 4: ANIMAÇÃO -->
-    <div class="pane" data-pane="4">
+    <div class="pane charpane" data-pane="4">
+      <section>
+        <h3>Animações do personagem</h3>
+        <p class="hint">O personagem usa as animações originais do AC (parado, correndo, atirando, pulando, morrendo…). Escolha na linha do tempo e dê play para ver o uniforme em movimento.</p>
+      </section>
+    </div>
+    <div class="pane weaponpane" data-pane="4">
       <nav class="subtabs">
         <button data-sub="a-bank" class="on">Banco</button><button data-sub="a-gen">Geradores</button><button data-sub="a-keys">Chaves</button><button data-sub="a-clips">Clipes</button>
       </nav>
@@ -291,8 +324,16 @@
       <section class="game">
         <h3>Instalar no jogo</h3>
         <p id="gameStatus" class="muted">—</p>
-        <div class="field"><label>Pasta da arma no jogo</label><input id="weaponName" value="subgun" spellcheck="false"></div>
-        <p class="hint">Instalar como outra arma? Troque o nome: subgun · assault · sniper · carbine · shotgun · pistol · knife · grenade</p>
+        <div class="charonly">
+          <label class="chk"><input type="radio" name="ct" id="charTargetTeam"> Skin do time (substitui uma das skins padrão)</label>
+          <div class="field row"><select id="charTeam"><option value="rvsf">RVSF</option><option value="cla">CLA</option></select><select id="charSlot"><option>01</option><option>02</option><option>03</option><option>04</option><option>05</option><option>06</option><option>07</option><option>08</option></select></div>
+          <label class="chk"><input type="radio" name="ct" id="charTargetNick"> Skin pelo seu apelido (pasta custom)</label>
+          <div class="field row"><input id="charNick" placeholder="Seu apelido no jogo"><select id="charNickTeam"><option value="ffa">sem time (ffa)</option><option value="cla">CLA</option><option value="rvsf">RVSF</option></select></div>
+          <label class="chk"><input type="checkbox" id="charMulti"> vale para todo apelido que contém esse nome (clã)</label>
+          <p class="hint">Vai para: <code id="charPath">—</code></p>
+        </div>
+        <div class="field weapononly"><label>Pasta da arma no jogo</label><input id="weaponName" value="subgun" spellcheck="false"></div>
+        <p class="hint weapononly">Instalar como outra arma? Troque o nome: subgun · assault · sniper · carbine · shotgun · pistol · knife · grenade</p>
         <button class="btn primary wide" id="btnInstall">Instalar no jogo</button>
         <div class="btnrow">
           <button class="btn sm" id="btnGameDir">Conectar pasta do jogo</button>

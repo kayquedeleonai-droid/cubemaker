@@ -6,7 +6,17 @@ Editor de armas para **AssaultCube** que roda no navegador. Abre os modelos MD3 
 
 ## O que faz
 
-O trabalho segue um **pipeline em 5 etapas**:
+O trabalho segue um **pipeline em 5 etapas**, para armas e para personagens.
+
+**Personagens (uniformes):**
+- Abra a pasta `packages/models/playermodels` do seu AC.
+- 13 uniformes prontos: Wehrmacht, Fallschirmjäger, Afrika Korps, Frente Leste, US Army, USMC, britânicos, Exército Vermelho (verão e inverno), Alemanha 1916, Poilu, Tommy e Doughboy.
+- Cada peça (túnica, mangas, calça, perneiras, botas, capacete) pode ser editada com tecidos e couros.
+- Insígnias rápidas: nome, número, divisas, estrela e braçadeira.
+- Instalação como skin de time (CLA/RVSF) ou por apelido (`custom/<apelido>_cla.jpg`), com backup.
+- O modelo de jogador é de Darren Pattenden / makkE e só pode ser usado para fins pessoais. Por isso ele **não** fica no repositório nem no site: o app lê o boneco do seu jogo.
+
+**Armas:**
 
 1. **Arma**
    - **Arsenal da 1ª e 2ª Guerra**: 39 modelos prontos, com textura e grupos de animação, que entram no lugar da arma do AC.
@@ -67,6 +77,7 @@ Código-fonte em `src/`:
 | `md3.js` | leitura e escrita de MD3, ilhas UV e parser do `md3.cfg` |
 | `materials.js` | materiais e ruído procedural |
 | `main.js` | app: 3D (three.js), pipeline, skin, camadas, decalques, grupos, motor de animação, exportação e instalação |
+| `md3.js` também lê | MD2 (modelo de jogador, só leitura) |
 | `presets.js` | arsenal: modelos procedurais WWI/WWII, atlas UV e encaixe no slot |
 | `game.js` | Modo Jogo (estande de tiro, efeitos e som) |
 | `index.html`, `style.css` | interface |
