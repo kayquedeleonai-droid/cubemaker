@@ -110,7 +110,7 @@ async function loadWeapon({ md3Buf, cfgText, skinImages, weaponName, project, sk
   model = m; m.nfOrig = m.nf; meshes = []; skins = [];
   S.originalMD3 = md3Buf; S.cfg = (cfgText || defaultCfg(m)).replace(/\r\n/g, '\n'); S.weapon = weaponName || S.weapon;
   S.global.detail = 1;
-  S.originalCfg = cfgText || null; S.skinSources = skinSources || []; S.acOriginal = origin || null; S.preset = null;
+  S.originalCfg = cfgText || null; S.skinSources = skinSources || []; S.acOriginal = origin || null; S.preset = null; S.presetM = null;
   S.islandMat = m.surfaces.map(() => new Map()); S.groups = []; S.gi = -1; S.sel = { si: -1, isl: new Set() };
   S.tagOffset = [0, 0, 0]; S.frame = 0; S.modifiedSkins = new Set(); undoStack.length = 0; redoStack.length = 0;
   S.prims = []; S.animRoot = false; S.decals = []; S.di = -1;
@@ -844,6 +844,13 @@ function defaultPort() {
   const t = model.tagNames.length ? model.tags[0][0].origin : [4, 25, -6];
   return [t[0] + 0.8, t[1] - 15, t[2] + 2.2];
 }
+// direção/ponto em milímetros do modelo do arsenal → unidades do MD3 (usa a base do slot)
+function presetDir(x, y, z) {
+  if (!S.presetM) return [x * 0.044, y * 0.044, z * 0.044];
+  const M = new THREE.Matrix4().fromArray(S.presetM), v = new THREE.Vector3(x, y, z).transformDirection(M).multiplyScalar(Math.hypot(x, y, z) * M.getMaxScaleOnAxis());
+  return [v.x, v.y, v.z].map(q => +q.toFixed(3));
+}
+function presetPoint(x, y, z) { return S.presetM ? new THREE.Vector3(x, y, z).applyMatrix4(new THREE.Matrix4().fromArray(S.presetM)).toArray() : [...S.root.pivot]; }
 function muzzle() { const t = model.tagNames.length ? model.tags[0][0].origin : [4, 30, -6]; return [t[0] + S.tagOffset[0], t[1] + S.tagOffset[1], t[2] + S.tagOffset[2]]; }
 
 // ---- montador de clipes: organiza idle / tiro / recarga e escreve md3anim
@@ -905,7 +912,7 @@ const GEN = {
     const [a, b] = clip(/shoot/i) || [0, model.nf - 1];
     clearKeys(g, a, b); setKey(g, a, {}); setKey(g, Math.min(b, a + 1), { r: [-14, 0, 0], e: 'out' }); setKey(g, b, {});
   },
-  reload({ tilt = 22, drop = 14, dropAxis = '-z', handFollows = true, boltPull = 3 } = {}) {
+  reload({ tilt = 22, drop = 14, dropAxis = '-z', handFollows = true, boltPull = 3, spin = 0 } = {}) {
     const c = clip(/reload/i); if (!c) return toast('Sem clipe "gun reload". Use "Montar clipes".', 'warn');
     const [a, b] = c, L = b - a; if (L < 12) return toast('A recarga precisa de pelo menos 13 quadros. Use "Montar clipes".', 'warn');
     const F = p => a + Math.round(p * L);
@@ -926,7 +933,7 @@ const GEN = {
       const g = S.groups[mi]; clearKeys(g, a, b);
       setKey(g, a, {}); setKey(g, F(0.16), {});
       setKey(g, F(0.24), { t: off(0.18), e: 'in' });
-      setKey(g, F(0.36), { t: off(1), r: [0, 0, 8], e: 'in' });
+      setKey(g, F(0.36), { t: off(1), r: [spin, 0, 8], e: 'in' });
       setKey(g, F(0.38), { t: off(1), r: [0, 0, 8], s: 0, e: 'step' });
       setKey(g, F(0.5), { t: off(1.1), s: 0, e: 'step' });
       setKey(g, F(0.52), { t: off(1.1), r: [0, 0, -6], s: 1, e: 'step' });
@@ -957,6 +964,69 @@ const GEN = {
     setKey(g, b - 1, { t: [15 * sx, -5, -2], r: [380, 90, 520 * sx], e: 'in' });
     setKey(g, b, { t: [15 * sx, -5, -2], s: 0, e: 'step' });
     return gi;
+  },
+  // ---- específicos dos modelos do arsenal
+  pinPull({ style = 'ring' } = {}) {          // tirar o pino / tampa / cordão (clipe "gun shoot")
+    const g = S.groups[groupByName(/^pino$/i)]; if (!g) return;
+    const [a, b] = clip(/shoot/i) || [0, model.nf - 1], L = b - a, F = p => a + Math.round(p * L);
+    const d = (x, y, z) => presetDir(x, y, z);
+    g.keys = {}; setKey(g, a, {});
+    if (style === 'cap') {                     // desenrosca e puxa o cordão
+      setKey(g, F(0.25), { r: [0, 0, 300], e: 'linear' }); setKey(g, F(0.45), { r: [0, 0, 600], t: d(0, -8, 0), e: 'linear' });
+      setKey(g, F(0.7), { r: [0, 0, 640], t: d(0, -60, -20), e: 'out' }); setKey(g, F(0.85), { r: [90, 0, 700], t: d(10, -90, -140), e: 'in' });
+      setKey(g, F(0.9), { t: d(10, -90, -140), s: 0, e: 'step' });
+    } else if (style === 'slide') {             // RGD-33: trava desliza
+      setKey(g, F(0.3), { t: d(0, -14, 0), e: 'out' }); setKey(g, b, { t: d(0, -14, 0) });
+    } else {                                    // argola/alça: puxa para fora e joga longe
+      setKey(g, F(0.2), { t: d(4, 2, 0) }); setKey(g, F(0.45), { t: d(30, 6, 4), r: [0, 0, 40], e: 'out' });
+      setKey(g, F(0.75), { t: d(80, -40, -120), r: [200, 90, 220], e: 'in' }); setKey(g, F(0.8), { t: d(80, -40, -120), s: 0, e: 'step' });
+    }
+  },
+  spoon() {                                     // a alavanca voa quando a granada é solta (clipe "gun throw")
+    const g = S.groups[groupByName(/^alavanca$/i)]; if (!g) return;
+    const c = clip(/throw/i) || clip(/shoot/i); if (!c) return; const [a, b] = c, L = b - a, F = p => a + Math.round(p * L);
+    g.keys = {}; setKey(g, a, {}); setKey(g, F(0.45), {});
+    setKey(g, F(0.6), { t: presetDir(10, 30, 40), r: [-90, 0, 60], e: 'out' }); setKey(g, F(0.85), { t: presetDir(30, -40, 160), r: [-400, 0, 200], e: 'in' });
+    setKey(g, F(0.9), { t: presetDir(30, -40, 160), s: 0, e: 'step' });
+  },
+  toggle({ lift = 70 } = {}) {                 // Luger: a articulação sobe e volta
+    const g = S.groups[groupByName(/^ferrolho$/i)]; if (!g) return;
+    const [a, b] = clip(/shoot/i) || [0, model.nf - 1];
+    clearKeys(g, a, b); setKey(g, a, {}); setKey(g, Math.min(b, a + 1), { r: [lift, 0, 0], t: [0, -0.8, 0.3], e: 'out' }); setKey(g, Math.min(b, a + 3), { e: 'spring' });
+  },
+  hammer() {                                    // revólver: o cão bate
+    const g = S.groups[groupByName(/^ferrolho$/i)]; if (!g) return;
+    const [a, b] = clip(/shoot/i) || [0, model.nf - 1];
+    clearKeys(g, a, b); setKey(g, a, { r: [-35, 0, 0] }); setKey(g, Math.min(b, a + 1), { e: 'out' }); setKey(g, b, { r: [-35, 0, 0], e: 'smooth' });
+  },
+  revolverReload() {                            // tambor gira rápido (municiador) e a arma inclina
+    const c = clip(/reload/i); if (!c) return; const [a, b] = c, L = b - a, F = p => a + Math.round(p * L);
+    clearKeys(S.root, a, b); setKey(S.root, a, {}); setKey(S.root, F(0.15), { t: [1.5, -1, 1.5], r: [10, 35, -8] }); setKey(S.root, F(0.8), { t: [1.5, -1, 1.5], r: [12, 32, -8] }); setKey(S.root, b, { e: 'back' });
+    const g = S.groups[groupByName(/^tambor$/i)]; if (!g) return;
+    clearKeys(g, a, b); setKey(g, a, {}); setKey(g, F(0.2), {}); setKey(g, F(0.55), { r: [0, 720, 0], e: 'linear' }); setKey(g, F(0.75), { r: [0, 1080, 0], e: 'out' }); setKey(g, b, { r: [0, 1080, 0] });
+  },
+  stripper() {                                  // pente de lâminas empurrado por cima (Kar98k, Mosin, Garand…)
+    const c = clip(/reload/i); if (!c) return; const [a, b] = c, L = b - a, F = p => a + Math.round(p * L);
+    let gi = S.groups.findIndex(g => /^pente$/i.test(g.name));
+    if (gi < 0) { const pos = presetPoint(0, -10, 34); gi = addPrimitive({ type: 'box', name: 'clip', size: [0.6, 2.4, 1.8], pos, mat: 'latao' }, { silent: true }).gi; S.groups[gi].name = 'Pente'; }
+    const g = S.groups[gi]; g.keys = {};
+    setKey(g, a, { s: 0 }); setKey(g, F(0.3), { t: presetDir(0, 0, 160), s: 0 });
+    setKey(g, F(0.32), { t: presetDir(0, 0, 160), s: 1, e: 'step' }); setKey(g, F(0.45), { t: presetDir(0, 0, 50), e: 'out' });
+    setKey(g, F(0.62), { t: presetDir(0, 0, 0), e: 'in' }); setKey(g, F(0.66), { t: presetDir(0, 0, 0), s: 0, e: 'step' });
+  },
+  shellLoad({ count = 4 } = {}) {               // escopeta: cartuchos entrando um a um por baixo
+    const c = clip(/reload/i); if (!c) return; const [a, b] = c, L = b - a, F = p => a + Math.round(p * L);
+    let gi = S.groups.findIndex(g => /^cartucho$/i.test(g.name));
+    if (gi < 0) { const pos = presetPoint(0, 20, -36); gi = addPrimitive({ type: 'cyl', name: 'shell12', size: [0.4, 1.6], pos, mat: 'tintaVermelha' }, { silent: true }).gi; S.groups[gi].name = 'Cartucho'; }
+    const g = S.groups[gi]; g.keys = {}; setKey(g, a, { s: 0 });
+    for (let i = 0; i < count; i++) {
+      const p0 = 0.18 + i * (0.62 / count), p1 = p0 + 0.5 / count * 0.55;
+      setKey(g, F(p0), { t: presetDir(-30, -20, -80), r: [30, 0, 0], s: 0 });
+      setKey(g, F(p0) + 1, { t: presetDir(-30, -20, -80), r: [30, 0, 0], s: 1, e: 'step' });
+      setKey(g, F(p1), { t: presetDir(0, 10, 0), e: 'out' });
+      setKey(g, F(p1) + 1, { t: presetDir(0, 10, 0), s: 0, e: 'step' });
+    }
+    clearKeys(S.root, a, b); setKey(S.root, a, {}); setKey(S.root, F(0.12), { t: [0.5, -1, 1], r: [6, -28, 6] }); setKey(S.root, F(0.82), { t: [0.5, -1, 1], r: [6, -26, 6] }); setKey(S.root, b, { e: 'back' });
   },
   tambor({ deg = 51.4, quiet = true } = {}) {
     const g = S.groups[groupByName(/^tambor$/i)]; if (!g) return quiet ? undefined : toast('Sem grupo "Tambor"', 'warn');
@@ -1039,6 +1109,39 @@ const GEN = {
   },
 };
 
+// ---- animação de fábrica de cada modelo do arsenal
+function presetAnim(def) {
+  const id = def.id, slot = def.slot;
+  if (slot === 'grenade') return { clips: null, steps: [['pinPull', { style: /stiel|eihand/.test(id) ? 'cap' : id === 'rgd33' ? 'slide' : 'ring' }], ['spoon', {}]], n: 'pino + alavanca' };
+  if (slot === 'knife') return { clips: null, steps: [], n: 'golpe original' };
+  if (slot === 'pistol') {
+    if (/webley|nagant/.test(id)) return { clips: [1, 6, 40], steps: [['recoil', { kick: 2.2, rise: 14, snap: 0.4 }], ['hammer'], ['trigger', { quiet: true }], ['tambor', {}], ['revolverReload']], n: 'cão, tambor e municiador' };
+    return { clips: [1, 6, 36], steps: [['recoil', { kick: 1.8, rise: 10, snap: 0.4 }], id === 'luger' ? ['toggle'] : ['bolt', { dist: id === 'c96' ? 1.4 : 2.2 }], ['trigger', { quiet: true }], ['shell', { size: 0.8 }], ['reload', { tilt: 30, drop: id === 'c96' ? 0 : 10 }]], n: id === 'luger' ? 'articulação, cápsula e carregador' : 'slide, cápsula e carregador' };
+  }
+  if (slot === 'subgun') {
+    const side = /sten|mp18/.test(id), drum = /thompson|ppsh/.test(id);
+    return { clips: [1, 8, 44], steps: [['recoil', { kick: 1.6, rise: 4, side: 0.8 }], ['bolt', { dist: 2.5 }], ['trigger', { quiet: true }], ['shell', {}], ['tracer', {}], ['reload', { tilt: side ? 12 : 22, dropAxis: side ? '-x' : '-z', drop: side ? 12 : drum ? 12 : 16, spin: drum ? 90 : 0 }]], n: 'recuo, ferrolho, cápsula, traçante e recarga' };
+  }
+  if (slot === 'assault') return { clips: [1, 8, 48], steps: [['recoil', { kick: id === 'bar1918' ? 3 : 2.2, rise: 6, side: 1 }], ['bolt', { dist: 3 }], ['trigger', { quiet: true }], ['shell', {}], ['tracer', {}], ['reload', { tilt: id === 'fg42' ? 12 : 26, dropAxis: id === 'fg42' ? '-x' : '-z' }]], n: 'recuo, ferrolho, cápsula, traçante e recarga' };
+  if (slot === 'sniper') return { clips: [1, 30, 48], steps: [['recoil', { kick: 4, rise: 12, side: 0.5, snap: 0.2 }], ['boltAction', {}], ['trigger', { quiet: true }], ['shell', { at: 0.5 }], id === 'enfield4' ? ['reload', { tilt: 18, boltPull: 0 }] : ['stripper']], n: 'ferrolho manual, cápsula e ' + (id === 'enfield4' ? 'carregador' : 'pente de lâminas') };
+  if (slot === 'carbine') {
+    if (id === 'smle') return { clips: [1, 30, 48], steps: [['recoil', { kick: 3.5, rise: 11, snap: 0.2 }], ['boltAction', { lift: 55, pull: 4 }], ['trigger', { quiet: true }], ['shell', { at: 0.5 }], ['stripper']], n: 'ferrolho manual e pente de lâminas' };
+    return { clips: [1, 10, 44], steps: [['recoil', { kick: 2.8, rise: 8 }], ['bolt', { dist: 3.2 }], ['trigger', { quiet: true }], ['shell', {}], id === 'garand' ? ['stripper'] : ['reload', { tilt: 20 }]], n: id === 'garand' ? 'ferrolho, cápsula e clipe en-bloc' : 'ferrolho, cápsula e carregador' };
+  }
+  if (slot === 'shotgun') return { clips: [1, 26, 44], steps: [['recoil', { kick: 5, rise: 14, snap: 0.15 }], ['pump', {}], ['trigger', { quiet: true }], ['shell', { at: 0.45, size: 1.4 }], ['shellLoad', { count: 4 }]], n: 'impacto, pump, cápsula e cartuchos' };
+  return null;
+}
+function applyPresetAnim(def, silent) {
+  const P = presetAnim(def); if (!P) return;
+  if (!silent) snapshot('animação ' + def.n);
+  const u = undoStack.length;
+  if (P.clips) assembleClips(...P.clips);
+  undoStack.length = u;
+  P.steps.forEach(([g, o]) => GEN[g] && GEN[g](o || {}));
+  S.presetAnimName = P.n;
+  if (!silent) { updateAll(); toast(`Animação de fábrica: ${P.n}`, 'ok'); }
+}
+
 // ---- banco de animações por tipo de arma
 const ANIM_BANK = {
   subgun:  { n: 'SMG (MP40 · Thompson · PPSh)', clips: [1, 8, 44], needs: 'Ferrolho, Carregador, Mão (opcional)', steps: [['recoil', { kick: 1.6, rise: 4, side: 0.8 }], ['bolt', { dist: 2.5 }], ['trigger', { quiet: true }], ['shell', {}], ['tracer', {}], ['reload', { tilt: 22 }]] },
@@ -1092,7 +1195,14 @@ function applyMyAnim(i) {
   updateAll(); toast(`"${A.name}" aplicada` + (missing.length ? ` · grupos não encontrados: ${missing.join(', ')}` : ''), missing.length ? 'warn' : 'ok');
 }
 function deleteMyAnim(i) { const l = myAnims(); l.splice(i, 1); localStorage.setItem('cm_anims', JSON.stringify(l)); updateBankUI(); }
+function updatePresetAnimCard() {
+  const box = $('#presetAnim'); if (!box) return;
+  const def = S.preset && ARSENAL.find(a => a.id === S.preset.id);
+  box.innerHTML = def ? `<div class="bankcard rec"><b>Animação de fábrica · ${def.n}</b><small>${presetAnim(def).n}</small><button class="btn sm primary">Reaplicar</button></div>` : '';
+  if (def) box.querySelector('button').onclick = () => applyPresetAnim(def);
+}
 function updateBankUI() {
+  updatePresetAnimCard();
   const ul = $('#myAnims'); if (!ul) return; ul.innerHTML = '';
   const l = myAnims();
   if (!l.length) ul.innerHTML = '<li class="muted">Nenhuma ainda. Anime e clique em "Salvar no banco".</li>';
@@ -1314,7 +1424,7 @@ async function saveProject() {
     md3: bufToB64(S.originalMD3),
     skins: skins.map((sk, i) => ({ file: S.skinFiles[i], orig: sk.orig.toDataURL('image/png'), overlay: sk.overlay.toDataURL('image/png') })),
     islandMat: S.islandMat.map(m => [...m]), groups: S.groups.map(g => ({ ...g, isl: [...g.isl] })),
-    global: S.global, tagOffset: S.tagOffset, modified: [...S.modifiedSkins], root: S.root, prims: S.prims, fx: S.fx, decals: S.decals, preset: S.preset
+    global: S.global, tagOffset: S.tagOffset, modified: [...S.modifiedSkins], root: S.root, prims: S.prims, fx: S.fx, decals: S.decals, preset: S.preset, presetM: S.presetM
   };
   download(`${S.weapon}.cubemaker`, new Blob([JSON.stringify(proj)], { type: 'application/json' }));
   toast('Projeto salvo', 'ok');
@@ -1334,7 +1444,7 @@ function applyProject(p) {
   S.gi = S.groups.length ? 0 : -1;
   S.global = { ...S.global, ...p.global }; S.tagOffset = p.tagOffset || [0, 0, 0];
   if (p.root) S.root = p.root;
-  if (p.preset) S.preset = p.preset;
+  if (p.preset) S.preset = p.preset; if (p.presetM) S.presetM = p.presetM;
   if (p.fx) S.fx = { ...S.fx, ...p.fx }; S.decals = p.decals || [];
   S.modifiedSkins = new Set(p.modified || []);
   p.skins.forEach((s, i) => { if (s.file) S.skinFiles[i] = s.file; });
@@ -1586,7 +1696,8 @@ async function loadPreset(id) {
     S.gi = S.groups.length ? 0 : -1;
     Object.assign(S.global, { wear: 0.4, age: 0.25, dirt: 0.25 }); S.fx = { ...S.fx, cavity: 0.4, scratches: 0, rust: 0, dust: 0, burn: 0, blood: 0, ...(def.fx || {}) };
     if (def.fx && def.fx.dirt != null) S.global.dirt = def.fx.dirt;
-    S.preset = { id: def.id, n: def.n, war: def.war, c: def.c };
+    S.preset = { id: def.id, n: def.n, war: def.war, c: def.c }; S.presetM = M0.toArray();
+    applyPresetAnim(def, true);
     model.surfaces.forEach((_, i) => S.modifiedSkins.add(i));
     skins.forEach((_, i) => composite(i));
     updateAll(); frameCamera('orbit'); goStep(2);

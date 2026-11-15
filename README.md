@@ -20,6 +20,10 @@ O trabalho segue um **pipeline em 5 etapas**, para armas e para personagens.
 
 1. **Arma**
    - **Arsenal da 1ª e 2ª Guerra**: 39 modelos prontos, com textura e grupos de animação, que entram no lugar da arma do AC.
+   - Cada modelo já abre com a **animação de fábrica** dele:
+     - granadas: pino, tampa ou cordão sendo tirado e a alavanca voando no arremesso
+     - armas de fogo: impacto/recuo com mola, cápsula ejetada e traçante, mais o mecanismo de cada uma (articulação da Luger, cão e tambor do revólver, slide, ferrolho, ferrolho manual, pump)
+     - recarga de cada tipo: carregador caindo (para o lado na Sten, MP18 e FG 42), tambor girando, pente de lâminas por cima (Kar98k, Mosin, Garand) ou cartuchos um a um (escopetas)
      - Granadas: Stielhandgranate 24/17, Mk 2, F1, Mills Nº 36, Eihandgranate 39, Kugelhandgranate, RGD-33
      - Facas e baionetas: M3, Mk I, Kampfmesser 42, S84/98, Fairbairn-Sykes
      - Pistolas: Luger, 1911, P38, C96, Webley, Nagant
