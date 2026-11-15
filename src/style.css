@@ -119,3 +119,12 @@ textarea{width:100%;min-height:260px;font:13px/1.5 var(--mono);resize:vertical}
 .helpbox li{margin-bottom:8px;font-size:15.5px}
 .helpbox .close{position:absolute;right:12px;top:12px}
 @media (max-width:1100px){main{grid-template-columns:240px 1fr 320px}.hbtns .btn:not(.ic):not(.primary){padding:0 8px;font-size:12px}}
+
+.btn.wide{width:100%;margin-top:8px;height:36px;font-size:14px}
+section.game{background:linear-gradient(#22251a,#1d1f17)}
+#gameStatus{font-size:14px;margin:0 0 4px;word-break:break-all}
+#gameStatus small{color:var(--muted)}
+.good{color:var(--green)} .bad{color:var(--red)}
+#confirm{position:fixed;inset:0;background:rgba(8,9,6,.7);display:none;align-items:center;justify-content:center;z-index:70}
+#confirm.show{display:flex}
+#confirm p{font-size:17px;margin:0 0 6px;max-width:440px}

@@ -4,7 +4,7 @@ Editor de armas para **AssaultCube** que roda no navegador. Abre os modelos MD3 
 
 **Site:** https://cubemaker.kayquedeleon.app
 
-## O que faz (v0.1)
+## O que faz
 
 - **Visualizador 3D** de modelos MD3 (hudguns), com as partes `weapon` e `hands`, a tag `tag_muzzle` e a "Visão FPS" (câmera no olho do jogador, como no jogo).
 - **Editor de skin**
@@ -15,12 +15,20 @@ Editor de armas para **AssaultCube** que roda no navegador. Abre os modelos MD3 
 - **Malha**: selecione ilhas ou peças, agrupe e mova, gire, escale ou oculte. Ajusta também a posição da boca do cano.
 - **Animação**: quadros-chave por grupo com interpolação suave, presets de ferrolho e gatilho no tiro, e alteração do número de quadros. Os intervalos vêm das linhas `md3anim` do `md3.cfg`.
 - **Exportação**: `tris_high.md3` (o gravador devolve o original byte a byte quando nada muda), a skin `.jpg`/`.png`, o `md3.cfg` e um `.zip` com a estrutura `packages/models/weapons/<arma>/` e os créditos.
+- **Instalar no jogo**: um botão grava a arma direto na pasta home do AssaultCube (Chrome ou Edge).
+  - Antes de gravar, guarda os originais em `cubemaker_backup/originais/` e a versão anterior em `cubemaker_backup/<data_hora>/`.
+  - Registra tudo em `cubemaker_backup/historico.json`.
+  - **Restaurar original** devolve a arma de fábrica.
 - **Projeto** `.cubemaker`: salva e reabre todo o trabalho.
 - Desfazer/refazer, atalhos de teclado, arrastar e soltar pastas.
 
 ## Instalar uma arma no jogo
 
-1. Clique em **Exportar pacote .zip**.
+**Direto:** clique em **Instalar no jogo**. Na primeira vez, conecte a pasta `Documentos\My Games\AssaultCube\v1.3`.
+
+**Manual:**
+
+1. Clique em **Exportar .zip**.
 2. Extraia o zip na pasta home do AssaultCube: `Documentos\My Games\AssaultCube\v1.3\`. Os arquivos da home substituem os originais sem mexer na instalação.
 3. Abra o jogo.
 

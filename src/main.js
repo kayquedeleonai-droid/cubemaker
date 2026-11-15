@@ -8,7 +8,7 @@ import { MATS, MAT_ORDER, fbm } from './materials.js';
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const D2R = Math.PI / 180;
-const VERSION = '0.1.0';
+const VERSION = '0.2.0';
 
 // ---------------------------------------------------------------- estado
 let model = null;          // MD3 parseado
@@ -34,6 +34,10 @@ function toast(msg, kind = '') {
 function b64ToBuf(b) { const s = atob(b); const u = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i); return u.buffer; }
 function bufToB64(buf) { let s = ''; const u = new Uint8Array(buf); for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)); return btoa(s); }
 function loadImage(src) { return new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => rej(new Error('Imagem inválida')); i.src = src; }); }
+function dataURLtoBlob(u) {
+  const [h, b] = u.split(','); const mime = (h.match(/data:([^;]+)/) || [])[1] || 'application/octet-stream';
+  return new Blob([b64ToBuf(b)], { type: mime });
+}
 function fileToDataURL(f) { return new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(f); }); }
 function download(name, blob) {
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name;
@@ -91,13 +95,14 @@ function frameCamera(mode = 'orbit') {
 }
 
 // ---------------------------------------------------------------- carregamento do modelo
-async function loadWeapon({ md3Buf, cfgText, skinImages, weaponName, project }) {
+async function loadWeapon({ md3Buf, cfgText, skinImages, weaponName, project, skinSources }) {
   const m = parseMD3(md3Buf);
   m.surfaces.forEach(computeIslands);
   meshes.forEach(x => { root.remove(x); x.geometry.dispose(); x.material.dispose(); });
   skins.forEach(sk => sk.texture && sk.texture.dispose());
   model = m; meshes = []; skins = [];
   S.originalMD3 = md3Buf; S.cfg = cfgText || defaultCfg(m); S.weapon = weaponName || S.weapon;
+  S.originalCfg = cfgText || null; S.skinSources = skinSources || [];
   S.islandMat = m.surfaces.map(() => new Map()); S.groups = []; S.gi = -1; S.sel = { si: -1, isl: new Set() };
   S.tagOffset = [0, 0, 0]; S.frame = 0; S.modifiedSkins = new Set(); undoStack.length = 0; redoStack.length = 0;
   const cfg = parseCfg(S.cfg);
@@ -642,24 +647,159 @@ function credits() {
     `http://creativecommons.org/licenses/by-nc-sa/2.5/\n\n` +
     `Este trabalho derivado é distribuído sob a mesma licença (BY-NC-SA).\n`;
 }
+const weaponDir = () => (S.weapon || 'arma').replace(/[^\w.-]/g, '_');
+function skinPath(si) {
+  const name = S.skinFiles[si], dir = `packages/models/weapons/${weaponDir()}/`;
+  return name.startsWith('../') ? 'packages/models/weapons/' + name.slice(3) : dir + name;
+}
+// arquivos que a arma modificada ocupa no jogo
+async function packageFiles() {
+  const dir = `packages/models/weapons/${weaponDir()}/`;
+  const out = [{ path: dir + 'tris_high.md3', data: new Blob([exportMD3()]) }, { path: dir + 'md3.cfg', data: new Blob([S.cfg]) }];
+  for (let si = 0; si < skins.length; si++) {
+    if (S.skinFiles[si].startsWith('../') && !S.modifiedSkins.has(si)) continue;   // não mexe em skins compartilhadas sem mudança
+    out.push({ path: skinPath(si), data: await skinBlob(si, /\.png$/i.test(S.skinFiles[si]) ? 'image/png' : 'image/jpeg') });
+  }
+  out.push({ path: dir + 'CREDITOS_LICENCA.txt', data: new Blob([credits()]) });
+  return out;
+}
+// cópia fiel dos arquivos originais carregados
+function originalFiles() {
+  const dir = `packages/models/weapons/${weaponDir()}/`;
+  const out = [{ path: dir + 'tris_high.md3', data: new Blob([S.originalMD3]) }];
+  if (S.originalCfg) out.push({ path: dir + 'md3.cfg', data: new Blob([S.originalCfg]) });
+  skins.forEach((_, si) => { if (S.skinSources[si]) out.push({ path: skinPath(si), data: S.skinSources[si] }); });
+  return out;
+}
 async function exportZip() {
   if (!model) return;
-  const zip = new JSZip(), w = (S.weapon || 'arma').replace(/[^\w.-]/g, '_');
-  const dir = `packages/models/weapons/${w}/`;
-  zip.file(dir + 'tris_high.md3', exportMD3());
-  zip.file(dir + 'md3.cfg', S.cfg);
-  for (let si = 0; si < skins.length; si++) {
-    const name = S.skinFiles[si];
-    const path = name.startsWith('../') ? 'packages/models/weapons/' + name.slice(3) : dir + name;
-    if (name.startsWith('../') && !S.modifiedSkins.has(si)) continue;   // não sobrescreve skins compartilhadas sem mudança
-    zip.file(path, await skinBlob(si, /\.png$/i.test(name) ? 'image/png' : 'image/jpeg'));
-  }
-  zip.file(dir + 'CREDITOS_LICENCA.txt', credits());
+  const zip = new JSZip(), w = weaponDir();
+  for (const f of await packageFiles()) zip.file(f.path, f.data);
   zip.file('LEIA-ME_CUBEMAKER.txt',
     `Como instalar:\n1) Extraia este zip dentro da pasta home do AssaultCube:\n   Documentos\\My Games\\AssaultCube\\v1.3\\\n` +
     `   (ou direto na pasta de instalação, fazendo backup antes)\n2) Abra o jogo — a arma "${w}" será substituída.\n\n${credits()}`);
   const blob = await zip.generateAsync({ type: 'blob' });
   download(`cubemaker_${w}.zip`, blob); toast('Pacote .zip exportado', 'ok');
+}
+
+
+// ---------------------------------------------------------------- instalação direta no jogo (com backup)
+const KV = {
+  db: null,
+  open() { return this.db || (this.db = new Promise((res, rej) => { const r = indexedDB.open('cubemaker', 1); r.onupgradeneeded = () => r.result.createObjectStore('kv'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); })); },
+  async get(k) { const db = await this.open(); return new Promise(res => { const q = db.transaction('kv').objectStore('kv').get(k); q.onsuccess = () => res(q.result); q.onerror = () => res(null); }); },
+  async set(k, v) { const db = await this.open(); return new Promise(res => { const t = db.transaction('kv', 'readwrite'); t.objectStore('kv').put(v, k); t.oncomplete = res; t.onerror = res; }); }
+};
+let gameDir = null, gameDirKind = '';
+const BACKUP = 'cubemaker_backup';
+async function initGameDir() {
+  try { gameDir = await KV.get('gameDir'); if (gameDir) gameDirKind = await detectKind(gameDir); } catch (e) { gameDir = null; }
+  updateGameUI();
+}
+async function detectKind(h) {
+  const names = new Set();
+  try { for await (const [n] of h.entries()) names.add(n.toLowerCase()); } catch (e) { return ''; }
+  if (names.has('bin_win32') || names.has('assaultcube.bat') || names.has('bin_unix')) return 'instalação';
+  if (names.has('config') || names.has('packages') || names.has('screenshots') || names.has('demos') || names.has('savedgames')) return 'home';
+  return '?';
+}
+async function connectGameDir() {
+  if (!window.showDirectoryPicker) { toast('Este navegador não grava em pastas. Use Chrome ou Edge no computador.', 'err'); return false; }
+  try {
+    const h = await window.showDirectoryPicker({ id: 'ac-home', mode: 'readwrite', startIn: 'documents' });
+    const kind = await detectKind(h);
+    gameDir = h; gameDirKind = kind; await KV.set('gameDir', h); updateGameUI();
+    if (kind === '?') toast(`Pasta "${h.name}" conectada, mas não parece ser do AssaultCube. Confira: Documentos\\My Games\\AssaultCube\\v1.3`, 'warn');
+    else toast(`Pasta do jogo conectada (${kind}): ${h.name}`, 'ok');
+    return true;
+  } catch (e) {
+    if (e.name === 'AbortError') return false;
+    toast(e.name === 'SecurityError' ? 'O navegador bloqueou o acesso a pastas aqui. Abra o CUBE MAKER direto em cubemaker.kayquedeleon.app.' : 'Não foi possível acessar a pasta: ' + e.message, 'err');
+    return false;
+  }
+}
+async function ensurePerm() {
+  if (!gameDir && !(await connectGameDir())) return false;
+  try {
+    let p = await gameDir.queryPermission({ mode: 'readwrite' });
+    if (p !== 'granted') p = await gameDir.requestPermission({ mode: 'readwrite' });
+    return p === 'granted';
+  } catch (e) { return connectGameDir(); }
+}
+async function dirAt(path, create) { let d = gameDir; for (const part of path.split('/').filter(Boolean)) d = await d.getDirectoryHandle(part, { create }); return d; }
+const splitPath = p => { const a = p.split('/'); const n = a.pop(); return [a.join('/'), n]; };
+async function readAt(path) { try { const [d, n] = splitPath(path); return await (await (await dirAt(d, false)).getFileHandle(n)).getFile(); } catch (e) { return null; } }
+async function writeAt(path, data) {
+  const [d, n] = splitPath(path);
+  const fh = await (await dirAt(d, true)).getFileHandle(n, { create: true });
+  const w = await fh.createWritable(); await w.write(data); await w.close();
+}
+async function removeAt(path) { try { const [d, n] = splitPath(path); await (await dirAt(d, false)).removeEntry(n); return true; } catch (e) { return false; } }
+function stampNow() { const d = new Date(), z = n => String(n).padStart(2, '0'); return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())}_${z(d.getHours())}-${z(d.getMinutes())}-${z(d.getSeconds())}`; }
+async function appendLog(entry) {
+  let hist = [];
+  try { const f = await readAt(`${BACKUP}/historico.json`); if (f) hist = JSON.parse(await f.text()); } catch (e) { }
+  hist.push(entry); await writeAt(`${BACKUP}/historico.json`, new Blob([JSON.stringify(hist, null, 2)]));
+}
+// guarda os originais (uma única vez por arquivo) e o que estiver no lugar antes de mexer
+async function backupBefore(paths, stamp, log) {
+  for (const o of originalFiles()) {
+    const bp = `${BACKUP}/originais/${o.path}`;
+    if (!(await readAt(bp))) { await writeAt(bp, o.data); log.originais.push(o.path); }
+  }
+  for (const p of paths) {
+    const ex = await readAt(p);
+    if (ex) { await writeAt(`${BACKUP}/${stamp}/${p}`, ex); log.backup.push(p); }
+  }
+}
+async function installToGame() {
+  if (!model) return toast('Abra uma arma primeiro', 'warn');
+  if (!(await ensurePerm())) return toast('Sem permissão para gravar na pasta do jogo', 'err');
+  const btn = $('#btnInstall'); btn.disabled = true; btn.textContent = 'Instalando…';
+  try {
+    const files = await packageFiles(), stamp = stampNow();
+    const log = { acao: 'instalar', quando: new Date().toISOString(), arma: weaponDir(), pasta: gameDir.name, originais: [], backup: [], gravados: [] };
+    await backupBefore(files.map(f => f.path), stamp, log);
+    for (const f of files) { await writeAt(f.path, f.data); log.gravados.push(f.path); }
+    if (log.backup.length) log.pastaBackup = `${BACKUP}/${stamp}`;
+    await appendLog(log);
+    $('#gameLast').textContent = `Última instalação: ${weaponDir()} · ${stamp.replace('_', ' ')}`;
+    toast(`✔ ${weaponDir()} instalada (${files.length} arquivos). Backup em ${BACKUP}. Reinicie o mapa no jogo.`, 'ok');
+  } catch (e) {
+    toast('Falha ao instalar: ' + e.message + (gameDirKind === 'instalação' ? ' — a pasta de instalação pode exigir administrador; use Documentos\\My Games\\AssaultCube\\v1.3' : ''), 'err');
+  } finally { btn.disabled = false; btn.textContent = 'Instalar no jogo'; }
+}
+async function restoreOriginal() {
+  if (!model) return toast('Abra a arma que quer restaurar', 'warn');
+  if (!(await ensurePerm())) return;
+  const w = weaponDir();
+  const ok = await confirmBox(`Restaurar a arma "${w}" ao original? A versão instalada vai para o backup antes.`);
+  if (!ok) return;
+  try {
+    const paths = (await packageFiles()).map(f => f.path), stamp = stampNow();
+    const log = { acao: 'restaurar', quando: new Date().toISOString(), arma: w, pasta: gameDir.name, originais: [], backup: [], restaurados: [], removidos: [] };
+    await backupBefore(paths, stamp, log);
+    for (const p of paths) {
+      const orig = await readAt(`${BACKUP}/originais/${p}`);
+      if (gameDirKind === 'instalação' && orig) { await writeAt(p, orig); log.restaurados.push(p); }
+      else if (await removeAt(p)) log.removidos.push(p);        // pasta home: remover faz o jogo voltar ao original
+    }
+    await appendLog(log);
+    toast(`Arma "${w}" restaurada ao original. Cópia da versão modificada em ${BACKUP}/${stamp}`, 'ok');
+  } catch (e) { toast('Falha ao restaurar: ' + e.message, 'err'); }
+}
+function confirmBox(msg) {
+  return new Promise(res => {
+    const box = $('#confirm'); box.querySelector('p').textContent = msg; box.classList.add('show');
+    const done = v => { box.classList.remove('show'); res(v); };
+    box.querySelector('.yes').onclick = () => done(true); box.querySelector('.no').onclick = () => done(false);
+  });
+}
+function updateGameUI() {
+  const st = $('#gameStatus');
+  if (!window.showDirectoryPicker) { st.innerHTML = '<span class="bad">Use Chrome ou Edge para instalar direto no jogo.</span>'; return; }
+  st.innerHTML = gameDir ? `<span class="good">●</span> ${gameDir.name} <small>(${gameDirKind || 'pasta'})</small>` : '<span class="bad">●</span> Nenhuma pasta conectada';
+  $('#btnGameDir').textContent = gameDir ? 'Trocar pasta' : 'Conectar pasta do jogo';
 }
 
 // ---------------------------------------------------------------- projeto
@@ -711,16 +851,16 @@ async function openFiles(fileList) {
   const m = parseMD3(await md3.arrayBuffer());
   const cfg = parseCfg(cfgText || '');
   const byName = new Map(files.map(f => [baseName(f.name), f]));
-  const imgs = [];
+  const imgs = [], srcs = [];
   for (const s of m.surfaces) {
     const want = cfg.skins[s.name] ? baseName(cfg.skins[s.name]) : null;
     let f = want && byName.get(want);
     if (!f) f = files.find(f => /\.(jpe?g|png)$/i.test(f.name) && baseName(f.name).includes(s.name));
-    if (!f && s.name === 'hands' && DEMO_HANDS) { imgs.push(await loadImage(DEMO_HANDS)); continue; }
+    if (!f && s.name === 'hands' && DEMO_HANDS) { imgs.push(await loadImage(DEMO_HANDS)); srcs.push(dataURLtoBlob(DEMO_HANDS)); continue; }
     if (!f && s.name === 'weapon') f = files.find(f => /^skin.*\.(jpe?g|png)$/i.test(baseName(f.name)) && !/hands/i.test(f.name));
-    imgs.push(f ? await loadImage(await fileToDataURL(f)) : null);
+    imgs.push(f ? await loadImage(await fileToDataURL(f)) : null); srcs.push(f || null);
   }
-  await loadWeapon({ md3Buf: await md3.arrayBuffer(), cfgText, skinImages: imgs, weaponName });
+  await loadWeapon({ md3Buf: await md3.arrayBuffer(), cfgText, skinImages: imgs, weaponName, skinSources: srcs });
 }
 async function replaceSkin(file) {
   const img = await loadImage(await fileToDataURL(file));
@@ -737,7 +877,8 @@ async function loadDemo() {
   const imgW = await loadImage(D.skinWeapon), imgH = await loadImage(D.skinHands);
   const m = parseMD3(b64ToBuf(D.md3));
   const imgs = m.surfaces.map(s => s.name === 'hands' ? imgH : imgW);
-  await loadWeapon({ md3Buf: b64ToBuf(D.md3), cfgText: D.cfg, skinImages: imgs, weaponName: 'subgun' });
+  const srcs = m.surfaces.map(s => dataURLtoBlob(s.name === 'hands' ? D.skinHands : D.skinWeapon));
+  await loadWeapon({ md3Buf: b64ToBuf(D.md3), cfgText: D.cfg, skinImages: imgs, weaponName: 'subgun', skinSources: srcs });
 }
 
 // ---------------------------------------------------------------- presets WWII
@@ -916,6 +1057,10 @@ function bindUI() {
   $('#btnDemo2').onclick = () => loadDemo().catch(err => toast(err.message, 'err'));
   $('#weaponName').onchange = e => { S.weapon = e.target.value.trim() || 'arma'; };
   $('#btnZip').onclick = () => exportZip().catch(err => toast(err.message, 'err'));
+  $('#btnInstall').onclick = () => installToGame().catch(err => toast(err.message, 'err'));
+  $('#btnInstall2').onclick = () => installToGame().catch(err => toast(err.message, 'err'));
+  $('#btnGameDir').onclick = () => connectGameDir();
+  $('#btnRestore').onclick = () => restoreOriginal().catch(err => toast(err.message, 'err'));
   $('#btnMD3').onclick = () => model && download('tris_high.md3', new Blob([exportMD3()]));
   $('#btnSkin').onclick = async () => model && download(baseName(S.skinFiles[S.editSkin]), await skinBlob(S.editSkin, /\.png$/i.test(S.skinFiles[S.editSkin]) ? 'image/png' : 'image/jpeg'));
   $('#btnCfg').onclick = () => model && download('md3.cfg', new Blob([S.cfg]));
@@ -1003,7 +1148,7 @@ function loop(now) {
   requestAnimationFrame(loop);
 }
 
-buildStaticUI(); bindUI(); setTool('nav'); resize();
+buildStaticUI(); bindUI(); setTool('nav'); resize(); initGameDir();
 camera.position.set(40, 25, 40); controls.target.set(0, 0, -10);
 requestAnimationFrame(loop);
 window.CM = { S, get model() { return model; }, get skins() { return skins; }, loadDemo, exportMD3, createGroup, selectIsland, assignMaterial, applyPreset, boltPreset, setFrame, frameCamera, setTool, parseMD3, undo, captureState };

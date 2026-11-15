@@ -12,7 +12,7 @@
 </head>
 <body>
 <header>
-  <div class="logo"><svg viewBox="0 0 32 32" width="26" height="26"><path d="M16 4l11 6.5v11L16 28 5 21.5v-11z" fill="none" stroke="currentColor" stroke-width="2.4"/><path d="M5 10.5l11 6.5 11-6.5M16 17v11" stroke="currentColor" stroke-width="2" fill="none"/></svg><b>CUBE MAKER</b><span>v0.1 · AssaultCube</span></div>
+  <div class="logo"><svg viewBox="0 0 32 32" width="26" height="26"><path d="M16 4l11 6.5v11L16 28 5 21.5v-11z" fill="none" stroke="currentColor" stroke-width="2.4"/><path d="M5 10.5l11 6.5 11-6.5M16 17v11" stroke="currentColor" stroke-width="2" fill="none"/></svg><b>CUBE MAKER</b><span>v0.2 · AssaultCube</span></div>
   <div class="hbtns">
     <label class="btn">Abrir pasta da arma<input id="openDir" type="file" webkitdirectory directory multiple hidden></label>
     <label class="btn">Abrir arquivos<input id="openFiles" type="file" multiple accept=".md3,.cfg,.jpg,.jpeg,.png,.cubemaker" hidden></label>
@@ -22,7 +22,8 @@
     <button class="btn ic" id="btnRedo" title="Refazer (Ctrl+Y)">↷</button>
     <span class="sep"></span>
     <button class="btn" id="btnSave" title="Ctrl+S">Salvar projeto</button>
-    <button class="btn primary" id="btnZip">Exportar pacote .zip</button>
+    <button class="btn" id="btnZip">Exportar .zip</button>
+    <button class="btn primary" id="btnInstall" title="Grava a arma na pasta do jogo, com backup">Instalar no jogo</button>
     <button class="btn ic" id="btnHelp" title="Ajuda">?</button>
   </div>
 </header>
@@ -39,6 +40,16 @@
         <button class="btn sm" id="btnCfg">md3.cfg</button>
         <button class="btn sm" id="btnShot">Foto</button>
       </div>
+    </section>
+    <section class="game">
+      <h3>Jogo</h3>
+      <p id="gameStatus" class="muted">—</p>
+      <div class="btnrow">
+        <button class="btn sm" id="btnGameDir">Conectar pasta do jogo</button>
+        <button class="btn sm danger" id="btnRestore" title="Volta a arma ao original (faz backup antes)">Restaurar original</button>
+      </div>
+      <button class="btn primary wide" id="btnInstall2">Instalar no jogo</button>
+      <p class="hint" id="gameLast">Use <code>Documentos\My Games\AssaultCube\v1.3</code>. Backups ficam em <code>cubemaker_backup</code>.</p>
     </section>
     <section>
       <h3>Partes do modelo</h3>
@@ -204,6 +215,7 @@
 </main>
 
 <div id="toast"></div>
+<div id="confirm"><div class="helpbox"><p></p><div class="btnrow"><button class="btn primary yes">Confirmar</button><button class="btn no">Cancelar</button></div></div></div>
 <div id="help">
   <div class="helpbox">
     <button class="btn ic close">✕</button>
@@ -214,6 +226,7 @@
       <li><b>Skin:</b> aplique um preset (MP40, Thompson...). Depois use a ferramenta <b>Material (M)</b> e clique nas peças que viram madeira ou baquelite. Pincel (B) para detalhes, desgaste e ferrugem.</li>
       <li><b>Malha:</b> crie um grupo (G) com as peças e mova, gire, escale ou oculte. Ótimo para alongar cano, trocar o carregador de lugar ou tirar trilhos modernos.</li>
       <li><b>Animação:</b> com um grupo ativo, escolha o quadro e ajuste. Ou use "Ferrolho no tiro".</li>
+      <li><b>Instalar no jogo:</b> na primeira vez, conecte a pasta <code>Documentos\My Games\AssaultCube\v1.3</code>. Cada instalação guarda os originais em <code>cubemaker_backup\originais</code> e a versão anterior numa pasta com data e hora. "Restaurar original" devolve a arma de fábrica.</li>
       <li><b>Exportar:</b> "Exportar pacote .zip" gera <code>packages/models/weapons/&lt;arma&gt;/</code> com md3, skin, cfg e créditos. Extraia em <code>Documentos\My Games\AssaultCube\v1.3\</code>.</li>
     </ol>
     <p class="muted">Atalhos: V M B E I · G criar grupo · F/P câmera · Espaço play · ←/→ quadros · Ctrl+Z/Y · Ctrl+S salvar</p>
