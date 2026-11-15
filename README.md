@@ -6,21 +6,29 @@ Editor de armas para **AssaultCube** que roda no navegador. Abre os modelos MD3 
 
 ## O que faz
 
-- **Visualizador 3D** de modelos MD3 (hudguns), com as partes `weapon` e `hands`, a tag `tag_muzzle` e a "Visão FPS" (câmera no olho do jogador, como no jogo).
-- **Editor de skin**
-  - 15 materiais procedurais: aço oxidado, parkerizado, nogueira, faia, baquelite, feldgrau, dunkelgelb, latão, couro e outros. Eles preservam o relevo e os detalhes da textura original.
-  - Presets MP40, Thompson, Kar98k e M1 Garand.
-  - Desgaste automático nas bordas, envelhecimento e sujeira.
-  - Pincel, borracha e conta-gotas, tanto em cima do modelo 3D quanto na vista UV.
-- **Malha**: selecione ilhas ou peças, agrupe e mova, gire, escale ou oculte. Ajusta também a posição da boca do cano.
-- **Animação**: quadros-chave por grupo com interpolação suave, presets de ferrolho e gatilho no tiro, e alteração do número de quadros. Os intervalos vêm das linhas `md3anim` do `md3.cfg`.
-- **Exportação**: `tris_high.md3` (o gravador devolve o original byte a byte quando nada muda), a skin `.jpg`/`.png`, o `md3.cfg` e um `.zip` com a estrutura `packages/models/weapons/<arma>/` e os créditos.
-- **Instalar no jogo**: um botão grava a arma direto na pasta home do AssaultCube (Chrome ou Edge).
-  - Antes de gravar, guarda os originais em `cubemaker_backup/originais/` e a versão anterior em `cubemaker_backup/<data_hora>/`.
-  - Registra tudo em `cubemaker_backup/historico.json`.
-  - **Restaurar original** devolve a arma de fábrica.
-- **Projeto** `.cubemaker`: salva e reabre todo o trabalho.
-- Desfazer/refazer, atalhos de teclado, arrastar e soltar pastas.
+O trabalho segue um **pipeline em 5 etapas**:
+
+1. **Arma**: as 8 armas originais do AC vêm embutidas (faca, pistola, carabina, escopeta, SMG, fuzil de assalto, sniper, granada). Também abre uma pasta, arquivos soltos ou um projeto.
+2. **Modelagem**
+   - Receitas da Segunda Guerra (MP40, Thompson, StG 44, Kar98k, M1 Carbine, Winchester 1897, Luger, 1911, M3, Stielhandgranate).
+   - Grupos de peças com mover, girar, escalar e ocultar.
+   - Hierarquia: um grupo "segue" outro, por exemplo a mão segue o carregador.
+   - Peças novas (cilindro, caixa, carregador, estojo, projétil, pino) exportadas no MD3 com textura própria.
+3. **Textura**
+   - Banco de texturas com miniaturas: metais, madeiras, pinturas, camuflagens (Splinter, Erbsenmuster, inverno, DAK), quadriculado, recartilhado e ferrugem. Aceita texturas importadas.
+   - Presets de época.
+   - **Camadas procedurais** estilo Substance: sujeira nas cavidades, arranhões, ferrugem, poeira por cima, pólvora no cano e sangue.
+   - **Decalques**: texto ou símbolos; pintado, gravado ou carimbo; com desgaste e espelhamento automático.
+   - Pincel.
+4. **Animação**
+   - **Banco de animações** por tipo de arma, mais as animações salvas por você.
+   - **Geradores**: recuo com mola, ferrolho, ferrolho manual, pump, gatilho, recarga completa, estojo ejetado, traçante, granada (pino + arremesso), golpe de faca e respiração.
+   - Quadros-chave com curvas (suave, impacto, mola, passa-e-volta, degrau), escala 0 para sumir e trilha "arma inteira".
+   - Montador de clipes que reescreve o `md3anim`.
+   - **Modo Jogo**: estande de tiro com clarão, traçante, estojos, impactos, som sintetizado, recarga (R) e granada (G).
+5. **Exportar**
+   - **Instalar no jogo** com backup automático e restauração.
+   - Zip, md3, skin, cfg e projeto `.cubemaker`.
 
 ## Instalar uma arma no jogo
 
@@ -47,17 +55,18 @@ Código-fonte em `src/`:
 |---|---|
 | `md3.js` | leitura e escrita de MD3, ilhas UV e parser do `md3.cfg` |
 | `materials.js` | materiais e ruído procedural |
-| `main.js` | app: 3D (three.js), skin, grupos, animação e exportação |
+| `main.js` | app: 3D (three.js), pipeline, skin, camadas, decalques, grupos, motor de animação, exportação e instalação |
+| `game.js` | Modo Jogo (estande de tiro, efeitos e som) |
 | `index.html`, `style.css` | interface |
 
-O `dist/` vai versionado para o Cloudflare servir sem passo de build (`wrangler.jsonc`).
+O `dist/` vai versionado para o Cloudflare servir sem passo de build (`wrangler.jsonc`). Os modelos originais ficam em `assets/weapons/` e são copiados para `dist/weapons/`. As miniaturas são geradas por `scripts/thumbs.py`.
 
 ## Créditos e licença dos modelos
 
-O exemplo em `assets/demo/` (submachine gun e mãos) é de **makkE (Markus Bekel)** para o AssaultCube, sob **CC BY-NC-SA 2.5** (veja `assets/demo/LICENSE-makkE.txt`). Armas derivadas desses modelos devem manter o crédito, ser não comerciais e usar a mesma licença. O CUBE MAKER inclui esse aviso automaticamente no zip exportado.
+Os modelos em `assets/weapons/` são de **makkE (Markus Bekel)** para o AssaultCube, sob **CC BY-NC-SA 2.5** (veja `assets/weapons/LICENSE-makkE.txt`). Armas derivadas desses modelos devem manter o crédito, ser não comerciais e usar a mesma licença. O CUBE MAKER inclui esse aviso automaticamente no zip exportado.
 
 ## Próximos passos
 
 - Modelos de mundo/terceira pessoa (MD2, `world/tris.md2`) para a arma nova aparecer também na mão dos outros jogadores
-- Modelagem de peças novas (primitivas: cilindro para cano, caixa para carregador) e UV automático
-- Camadas de pintura e decalques (inscrições, números de série)
+- Auto-rig: grupos (ferrolho, carregador, gatilho) já prontos para as 8 armas originais
+- Camadas de pintura empilháveis com máscaras
