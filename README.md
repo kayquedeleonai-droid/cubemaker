@@ -50,7 +50,10 @@ O trabalho segue um **pipeline em 5 etapas**, para armas e para personagens.
    - **Geradores**: recuo com mola, ferrolho, ferrolho manual, pump, gatilho, recarga completa, estojo ejetado, traçante, granada (pino + arremesso), golpe de faca e respiração.
    - Quadros-chave com curvas (suave, impacto, mola, passa-e-volta, degrau), escala 0 para sumir e trilha "arma inteira".
    - Montador de clipes que reescreve o `md3anim`.
-   - **Modo Jogo**: estande de tiro com clarão, traçante, estojos, impactos, som sintetizado, recarga (R) e granada (G).
+   - **Modo Jogo**, com duas opções de mapa:
+     - **Arena CQB:** salas, corredores e caixotes. Você anda com WASD (Shift corre) e enfrenta 6 soldados-bot que patrulham, viram para você e atiram no modo Combate (ou só patrulham no Treino). Eles levam dano (tiro na cabeça vale 2,5×), caem e renascem. O HUD mostra vida, abates e mortes.
+     - **Estande de tiro:** alvos.
+     - Nos dois: clarão, traçante, estojos, impactos, som sintetizado, recarga (R) e granada (G).
 5. **Exportar**
    - **Instalar no jogo** com backup automático e restauração.
    - Zip, md3, skin, cfg e projeto `.cubemaker`.
@@ -83,7 +86,8 @@ Código-fonte em `src/`:
 | `main.js` | app: 3D (three.js), pipeline, skin, camadas, decalques, grupos, motor de animação, exportação e instalação |
 | `md3.js` também lê | MD2 (modelo de jogador, só leitura) |
 | `presets.js` | arsenal: modelos procedurais WWI/WWII, atlas UV e encaixe no slot |
-| `game.js` | Modo Jogo (estande de tiro, efeitos e som) |
+| `game.js` | Modo Jogo (efeitos, som, movimento, combate) |
+| `arena.js` | arena CQB e soldados-bot |
 | `index.html`, `style.css` | interface |
 
 O `dist/` vai versionado para o Cloudflare servir sem passo de build (`wrangler.jsonc`). Os modelos originais ficam em `assets/weapons/` e são copiados para `dist/weapons/`. As miniaturas são geradas por `scripts/thumbs.py`.

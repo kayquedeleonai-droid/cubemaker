@@ -1,15 +1,16 @@
 // CUBE MAKER — Modo Jogo: estande de tiro para testar as animações como no AssaultCube
-// Clique = atirar · R = recarregar · G = granada · Esc = sair
+// Clique = atirar · R = recarregar · G = granada · WASD = andar (arena) · Esc = sair
+import { buildArena, collide, Bot } from './arena.js';
 
 const WEAPON_STATS = {           // valores aproximados do AssaultCube 1.3
-  subgun: { delay: 80, mag: 30, spare: 120, auto: true, pellets: 1, kick: 0.9 },
-  assault: { delay: 120, mag: 20, spare: 100, auto: true, pellets: 1, kick: 1.3 },
-  sniper: { delay: 1500, mag: 5, spare: 20, auto: false, pellets: 1, kick: 3.5 },
-  carbine: { delay: 720, mag: 10, spare: 40, auto: false, pellets: 1, kick: 2 },
-  shotgun: { delay: 880, mag: 7, spare: 28, auto: false, pellets: 9, kick: 3.5 },
-  pistol: { delay: 160, mag: 10, spare: 50, auto: false, pellets: 1, kick: 1.2 },
-  knife: { delay: 500, mag: 0, spare: 0, auto: false, pellets: 0, kick: 0, melee: true },
-  grenade: { delay: 650, mag: 1, spare: 3, auto: false, pellets: 0, kick: 0, grenade: true },
+  subgun: { delay: 80, mag: 30, spare: 120, auto: true, pellets: 1, kick: 0.9, dmg: 18 },
+  assault: { delay: 120, mag: 20, spare: 100, auto: true, pellets: 1, kick: 1.3, dmg: 24 },
+  sniper: { delay: 1500, mag: 5, spare: 20, auto: false, pellets: 1, kick: 3.5, dmg: 120 },
+  carbine: { delay: 720, mag: 10, spare: 40, auto: false, pellets: 1, kick: 2, dmg: 60 },
+  shotgun: { delay: 880, mag: 7, spare: 28, auto: false, pellets: 9, kick: 3.5, dmg: 13 },
+  pistol: { delay: 160, mag: 10, spare: 50, auto: false, pellets: 1, kick: 1.2, dmg: 28 },
+  knife: { delay: 500, mag: 0, spare: 0, auto: false, pellets: 0, kick: 0, melee: true, dmg: 70 },
+  grenade: { delay: 650, mag: 1, spare: 3, auto: false, pellets: 0, kick: 0, grenade: true, dmg: 0 },
 };
 
 // ---------------------------------------------------------------- som sintetizado (WebAudio)
@@ -48,10 +49,84 @@ class Sfx {
 export function createGame(ctx) {
   const { THREE, scene, camera, controls, canvas, root } = ctx;
   const sfx = new Sfx();
-  const G = { on: false, stats: null, ammo: 0, spare: 0, firing: false, last: 0, clip: null, clipT0: 0, reloading: false, kick: 0, camKick: 0, yaw: 0, pitch: 0, score: 0, shots: 0, nadeT: 0 };
+  const G = { on: false, bob: 0, stats: null, ammo: 0, spare: 0, firing: false, last: 0, clip: null, clipT0: 0, reloading: false, kick: 0, camKick: 0, yaw: 0, pitch: 0, score: 0, shots: 0, nadeT: 0 };
   const world = new THREE.Group(); world.visible = false; scene.add(world);
   const fx = [];   // efeitos temporários {obj, life, update}
-  let targets = [], solids = [], saved = null, hud = null, flash = null, flashLight = null;
+  let targets = [], solids = [], saved = null, hud = null, flash = null, flashLight = null, arena = null, bots = [];
+  const keys = {}; G.map = 'arena'; G.botMode = 'combate'; G.pos = new THREE.Vector3(); G.hp = 100; G.kills = 0; G.deaths = 0;
+  const botMeshes = () => bots.flatMap(b => b.dead ? [] : b.meshes);
+  function buildWorld() {
+    while (world.children.length) world.remove(world.children[0]);
+    bots = []; targets = []; arena = null;
+    if (G.map === 'estande') { buildRange(); G.pos.set(0, 0, 0); }
+    else {
+      arena = buildArena(THREE, world); solids = arena.solids; G.pos.copy(arena.start); G.yaw = 0; G.pitch = 0;
+      if (G.botMode !== 'off') for (let i = 0; i < 6; i++) bots.push(new Bot(THREE, world, farSpawn(), i));
+    }
+    flash = new THREE.Sprite(new THREE.SpriteMaterial({ map: flashTex(), color: 0xffd8a0, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false }));
+    flash.scale.set(9, 9, 1); flash.visible = false; flash.renderOrder = 20; world.add(flash);
+    flashLight = new THREE.PointLight(0xffb070, 0, 80, 1.5); world.add(flashLight);
+  }
+  function farSpawn() {
+    const c = arena.way.filter(w => w.distanceTo(new THREE.Vector3(G.pos.x, -22, G.pos.z)) > 130);
+    return (c.length ? c : arena.way)[Math.floor(Math.random() * (c.length || arena.way.length))].clone();
+  }
+  const losRay = new THREE.Raycaster();
+  function blocked(a, b) { const d = b.clone().sub(a), L = d.length(); losRay.set(a, d.normalize()); losRay.far = L - 2; return losRay.intersectObjects(solids, false).length > 0; }
+  function damageBot(bot, dmg, point, head) {
+    if (bot.dead) return;
+    bot.hp -= dmg * (head ? 2.5 : 1); bot.hitT = performance.now();
+    bot.meshes.forEach(m => m.material.emissive && m.material.emissive.setHex(0x661010));
+    for (let i = 0; i < (head ? 10 : 6); i++) debris(point, 0x7a0c10, 30);
+    if (head) sfx.click(500, 0.3, 0.02);
+    if (bot.hp <= 0) {
+      bot.dead = true; bot.respawnAt = performance.now() + 3500; G.kills++; G.score++;
+      const g = bot.g, ry = g.rotation.y, side = Math.random() < 0.5 ? 1 : -1;
+      fx.push({ obj: g, life: 0.45, update(dt, k) { g.rotation.set((1 - k) * -Math.PI / 2 * 0.98, ry, (1 - k) * 0.3 * side); g.position.y = -22 + (1 - k) * 1.5; } });
+      toastHud(head ? 'ABATE · TIRO NA CABEÇA' : 'ABATE');
+    }
+    updateHud();
+  }
+  function damagePlayer(d) {
+    G.hp -= d; G.hurtT = performance.now(); G.camKick += 0.02;
+    if (G.hp <= 0) { G.deaths++; G.hp = 100; G.pos.copy(arena ? arena.start : new THREE.Vector3()); G.yaw = 0; G.ammo = G.stats.mag; toastHud('VOCÊ CAIU — renascendo'); }
+    updateHud();
+  }
+  function toastHud(t) { if (!hud) return; const el = hud.querySelector('.gtoast'); el.textContent = t; el.classList.remove('show'); void el.offsetWidth; el.classList.add('show'); }
+  function updateBots(dt, now) {
+    const eye = new THREE.Vector3(G.pos.x, 0, G.pos.z), v = new THREE.Vector3();
+    for (const b of bots) {
+      if (b.hitT && now - b.hitT > 90) { b.meshes.forEach(m => m.material.emissive && m.material.emissive.setHex(0)); b.hitT = 0; }
+      if (b.dead) {
+        if (now > b.respawnAt) { b.dead = false; b.hp = 100; b.g.rotation.set(0, 0, 0); b.g.position.copy(farSpawn()); b.target = null; }
+        continue;
+      }
+      const head = b.headPos(v.clone()), toP = eye.clone().sub(b.g.position); toP.y = 0; const dist = toP.length();
+      b.losT = (b.losT || 0) - dt;
+      if (b.losT <= 0) { b.losT = 0.25; b.sees = G.botMode !== 'off' && dist < 330 && !blocked(head, eye); }
+      let moving = false;
+      if (b.sees) {
+        const want = Math.atan2(toP.x, toP.z); let d = want - b.g.rotation.y; d = Math.atan2(Math.sin(d), Math.cos(d)); b.g.rotation.y += d * Math.min(1, dt * 6);
+        if (G.botMode === 'combate') {
+          b.cool -= dt;
+          if (b.cool <= 0 && Math.abs(d) < 0.3) {
+            b.cool = 0.9 + Math.random() * 1.1;
+            const m = b.muzzle.getWorldPosition(new THREE.Vector3()), hitP = Math.random() < Math.max(0.08, 0.42 - dist / 700);
+            const aim = eye.clone().add(new THREE.Vector3((Math.random() - 0.5) * (hitP ? 2 : 18), (Math.random() - 0.5) * (hitP ? 2 : 10), (Math.random() - 0.5) * (hitP ? 2 : 18)));
+            tracer(m, aim); sfx.shot(0.5); if (hitP) damagePlayer(8 + Math.random() * 6);
+          }
+          if (dist > 90) { v.copy(toP).normalize().multiplyScalar(18 * dt); b.g.position.add(v); moving = true; }
+        }
+      } else {
+        if (!b.target || b.g.position.distanceTo(b.target) < 8) { const near = arena.way.filter(w => w.distanceTo(b.g.position) < 150); b.target = near[Math.floor(Math.random() * near.length)] || arena.way[0]; }
+        v.copy(b.target).sub(b.g.position); v.y = 0;
+        if (v.length() > 0.1) { b.g.rotation.y = Math.atan2(v.x, v.z); v.normalize().multiplyScalar(28 * dt); b.g.position.add(v); moving = true; }
+      }
+      collide(b.g.position, arena.boxes, 6);
+      b.walk = moving ? b.walk + dt * 9 : b.walk * 0.8;
+      const sw = Math.sin(b.walk) * (moving ? 0.6 : 0); b.legL.rotation.x = sw; b.legR.rotation.x = -sw;
+    }
+  }
 
   // ------------------------------------------------ estande
   function bullseye() {
@@ -61,7 +136,6 @@ export function createGame(ctx) {
     const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
   }
   function buildRange() {
-    while (world.children.length) world.remove(world.children[0]);
     const floor = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), new THREE.MeshStandardMaterial({ color: 0x3a3a3c, roughness: 0.95 }));
     floor.rotation.x = -Math.PI / 2; floor.position.y = -22; world.add(floor); solids = [floor];
     const g = new THREE.GridHelper(400, 40, 0x555558, 0x444447); g.position.y = -21.9; world.add(g);
@@ -73,9 +147,6 @@ export function createGame(ctx) {
       t.position.set(x, y, z); t.userData.base = t.position.clone(); t.userData.wob = 0; world.add(t); targets.push(t); solids.push(t);
       const post = new THREE.Mesh(new THREE.BoxGeometry(1.2, 22 + y, 1.2), new THREE.MeshStandardMaterial({ color: 0x5a4a3a })); post.position.set(x, (y - 22) / 2 - 3.5, z - 1); world.add(post);
     });
-    flash = new THREE.Sprite(new THREE.SpriteMaterial({ map: flashTex(), color: 0xffd8a0, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false }));
-    flash.scale.set(9, 9, 1); flash.visible = false; flash.renderOrder = 20; world.add(flash);
-    flashLight = new THREE.PointLight(0xffb070, 0, 80, 1.5); world.add(flashLight);
   }
   function flashTex() {
     const c = document.createElement('canvas'); c.width = c.height = 128; const x = c.getContext('2d');
@@ -90,10 +161,15 @@ export function createGame(ctx) {
   function makeHud() {
     hud = document.createElement('div'); hud.className = 'gamehud';
     hud.innerHTML = `<div class="xhair"></div><div class="ammo"><b>30</b><span>/ 90</span></div><div class="ginfo"></div>
-      <div class="ghelp">CLIQUE atirar · <b>R</b> recarregar · <b>G</b> granada · mouse mira · <b>ESC</b> sair</div>
+      <div class="ghelp">CLIQUE atirar · <b>WASD</b> andar · <b>R</b> recarregar · <b>G</b> granada · <b>ESC</b> sair</div>
+      <div class="ghp"><span>VIDA</span><b>100</b></div><div class="gkd"></div><div class="gtoast"></div><div class="ghurt"></div>
+      <div class="gopts"><select class="gmap"><option value="arena">Arena CQB</option><option value="estande">Estande de tiro</option></select><select class="gbots"><option value="combate">Bots: combate</option><option value="treino">Bots: treino (não atiram)</option><option value="off">Sem bots</option></select></div>
       <div class="gscore">ACERTOS <b>0</b></div><button class="btn gexit">Sair do Modo Jogo</button>`;
     canvas.parentElement.appendChild(hud);
     hud.querySelector('.gexit').onclick = () => exit();
+    const gm = hud.querySelector('.gmap'), gb = hud.querySelector('.gbots'); gm.value = G.map; gb.value = G.botMode;
+    gm.onchange = () => { G.map = gm.value; buildWorld(); updateHud(); gm.blur(); };
+    gb.onchange = () => { G.botMode = gb.value; buildWorld(); updateHud(); gb.blur(); };
   }
   function updateHud() {
     if (!hud) return;
@@ -101,6 +177,9 @@ export function createGame(ctx) {
     hud.querySelector('.ammo span').textContent = G.stats.melee ? '' : '/ ' + G.spare;
     hud.querySelector('.ammo').classList.toggle('low', !G.stats.melee && G.ammo <= Math.ceil(G.stats.mag * 0.2));
     hud.querySelector('.gscore b').textContent = `${G.score} / ${G.shots}`;
+    hud.querySelector('.ghp').style.display = arena && G.botMode === 'combate' ? '' : 'none';
+    hud.querySelector('.ghp b').textContent = Math.max(0, Math.round(G.hp));
+    hud.querySelector('.gkd').textContent = arena ? `ABATES ${G.kills} · MORTES ${G.deaths}` : '';
     hud.querySelector('.ginfo').textContent = G.clip ? `${G.clip.name} · quadro ${ctx.getFrame()}` : 'gun idle';
   }
 
@@ -123,6 +202,7 @@ export function createGame(ctx) {
     if (!st.melee && G.ammo <= 0) { sfx.click(900, 0.3); G.last = now; if (G.spare > 0) reload(); return; }
     G.last = now;
     if (st.melee) { sfx.swish(); playClip(/shoot/i, () => { G.clip = null; }); setTimeout(() => meleeHit(), st.delay * 0.4); return; }
+    const hitList = () => [...solids, ...botMeshes()];
     G.ammo--; G.shots++;
     sfx.shot(st.pellets > 1 ? 1.6 : st.kick > 3 ? 1.4 : 1);
     G.kick = Math.min(1.6, G.kick + st.kick * 0.35); G.camKick += st.kick * 0.012;
@@ -134,10 +214,11 @@ export function createGame(ctx) {
       const spread = st.pellets > 1 ? 0.06 : 0.004 + G.kick * 0.004;
       const dir = new THREE.Vector3((Math.random() - 0.5) * spread, (Math.random() - 0.5) * spread, -1).applyQuaternion(camera.quaternion).normalize();
       const ray = new THREE.Raycaster(camera.position.clone(), dir, 0.1, 600);
-      const hit = ray.intersectObjects(solids, false)[0];
+      const hit = ray.intersectObjects(hitList(), false)[0];
       const end = hit ? hit.point : camera.position.clone().addScaledVector(dir, 400);
       if (p < 3) tracer(m, end);
-      if (hit) impact(hit, targets.includes(hit.object));
+      if (hit && hit.object.userData.bot) damageBot(hit.object.userData.bot, st.dmg || 20, hit.point, hit.object.userData.part === 'head');
+      else if (hit) impact(hit, targets.includes(hit.object));
     }
     if (!ctx.hasPrim(/estojo/i)) ejectShell();
     else sfx.tink(0.35 + Math.random() * 0.2);
@@ -145,9 +226,10 @@ export function createGame(ctx) {
     updateHud();
   }
   function meleeHit() {
-    const ray = new THREE.Raycaster(camera.position.clone(), new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion), 0.1, 90);
-    const hit = ray.intersectObjects(solids, false)[0];
-    if (hit) { impact(hit, targets.includes(hit.object)); sfx.metal(0, 0.6); }
+    const ray = new THREE.Raycaster(camera.position.clone(), new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion), 0.1, 40);
+    const hit = ray.intersectObjects([...solids, ...botMeshes()], false)[0];
+    if (hit && hit.object.userData.bot) { damageBot(hit.object.userData.bot, G.stats.dmg || 70, hit.point, hit.object.userData.part === 'head'); sfx.metal(0, 0.4); }
+    else if (hit) { impact(hit, targets.includes(hit.object)); sfx.metal(0, 0.6); }
   }
   function reload() {
     const st = G.stats;
@@ -204,6 +286,8 @@ export function createGame(ctx) {
     fx.push({ obj: s, life: 0.6, update(dt, k) { s.scale.setScalar(4 + (1 - k) * 26); s.material.opacity = k * 0.9; L.intensity = k * 40; }, end() { world.remove(s); world.remove(L); } });
     for (let i = 0; i < 40; i++) debris(p, 0x3a332a, 60);
     targets.forEach(t => { if (t.position.distanceTo(p) < 45) { t.userData.wob = 1; G.score++; } });
+    bots.forEach(b => { if (b.dead) return; const d = b.g.position.distanceTo(new THREE.Vector3(p.x, -22, p.z)); if (d < 60) damageBot(b, 160 * (1 - d / 60), b.headPos(new THREE.Vector3()), false); });
+    if (arena) { const d = new THREE.Vector3(G.pos.x, -22, G.pos.z).distanceTo(new THREE.Vector3(p.x, -22, p.z)); if (d < 40) damagePlayer(70 * (1 - d / 40)); }
     updateHud();
   }
   function tracer(a, b) {
@@ -246,14 +330,16 @@ export function createGame(ctx) {
   function onUp(e) { if (e.button === 0) G.firing = false; }
   function onMove(e) {
     if (!G.on) return;
-    if (document.pointerLockElement === canvas) { G.yaw -= e.movementX * 0.0022; G.pitch -= e.movementY * 0.0022; }
+    if (document.pointerLockElement === canvas || arena) { const sc = document.pointerLockElement === canvas ? 0.0022 : 0.004; G.yaw -= e.movementX * sc; G.pitch -= e.movementY * sc; }
     else { const r = canvas.getBoundingClientRect(); G.yaw = -((e.clientX - r.left) / r.width - 0.5) * 0.9; G.pitch = -((e.clientY - r.top) / r.height - 0.5) * 0.5; }
-    G.yaw = Math.max(-1.1, Math.min(1.1, G.yaw)); G.pitch = Math.max(-0.6, Math.min(0.6, G.pitch));
+    if (!arena) G.yaw = Math.max(-1.1, Math.min(1.1, G.yaw)); G.pitch = Math.max(arena ? -1.3 : -0.6, Math.min(arena ? 1.3 : 0.6, G.pitch));
     G.sway = Math.max(-1, Math.min(1, (G.sway || 0) + e.movementX * 0.01));
   }
+  function onKeyUp(e) { keys[e.key.toLowerCase()] = false; }
   function onKey(e) {
     if (!G.on) return;
-    const k = e.key.toLowerCase();
+    if (/SELECT|INPUT/.test(document.activeElement && document.activeElement.tagName)) return;
+    const k = e.key.toLowerCase(); keys[k] = true;
     if (k === 'escape') { if (document.pointerLockElement !== canvas) exit(); return; }
     if (k === 'r') { sfx.init(); reload(); }
     if (k === 'g') { sfx.init(); throwGrenade(performance.now()); }
@@ -275,7 +361,15 @@ export function createGame(ctx) {
     // câmera
     G.camKick *= Math.pow(0.002, dt); G.kick *= Math.pow(0.0005, dt); G.sway = (G.sway || 0) * Math.pow(0.01, dt);
     let shake = 0; if (G.shake) { G.shake = Math.max(0, G.shake - dt); shake = G.shake; }
-    camera.position.set((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake, 0);
+    if (arena) {
+      const f = (keys.w ? 1 : 0) - (keys.s ? 1 : 0), sd = (keys.d ? 1 : 0) - (keys.a ? 1 : 0), sp = (keys.shift ? 95 : 62) * dt;
+      if (f || sd) { const fx2 = -Math.sin(G.yaw), fz = -Math.cos(G.yaw); G.pos.x += (fx2 * f + Math.cos(G.yaw) * sd) * sp; G.pos.z += (fz * f - Math.sin(G.yaw) * sd) * sp; G.bob = (G.bob || 0) + dt * (keys.shift ? 13 : 10); }
+      collide(G.pos, arena.boxes, 7);
+      updateBots(dt, now);
+    }
+    const bob = arena && (keys.w || keys.a || keys.s || keys.d) ? Math.sin(G.bob || 0) * 0.35 : 0;
+    camera.position.set(G.pos.x + (Math.random() - 0.5) * shake, G.pos.y + bob + (Math.random() - 0.5) * shake, G.pos.z);
+    if (hud) { const h = hud.querySelector('.ghurt'); h.style.opacity = G.hurtT ? Math.max(0, 1 - (now - G.hurtT) / 400) * 0.6 : 0; }
     camera.rotation.set(G.pitch + G.camKick, G.yaw, 0, 'YXZ');
     camera.updateMatrixWorld();
     // arma presa à câmera + recuo procedural (como o "kick" do AC) + balanço
@@ -283,7 +377,7 @@ export function createGame(ctx) {
     if (G.dip) { const k = (now - G.dip.t0) / G.dip.dur; if (k >= 1) G.dip = null; else dip = Math.sin(k * Math.PI); }
     const kickBack = G.kick * 1.6, kickUp = G.kick * 0.05;
     tmpM.copy(camera.matrixWorld)
-      .multiply(new THREE.Matrix4().makeTranslation(-G.sway * 0.4, -dip * 9, kickBack))
+      .multiply(new THREE.Matrix4().makeTranslation(-G.sway * 0.4 + Math.cos((G.bob || 0) / 2) * bob * 0.6, -dip * 9 + bob * 0.5, kickBack))
       .multiply(new THREE.Matrix4().makeRotationX(kickUp - dip * 0.5))
       .multiply(new THREE.Matrix4().makeRotationY(-G.sway * 0.03))
       .multiply(baseRot);
@@ -310,20 +404,21 @@ export function createGame(ctx) {
     G.stats = WEAPON_STATS[ctx.weapon()] || WEAPON_STATS.subgun;
     G.ammo = G.stats.mag; G.spare = G.stats.spare; G.busy = false; G.hideUntil = 0; G.keepLast = false; G.score = 0; G.shots = 0; G.kick = 0; G.camKick = 0; G.yaw = 0; G.pitch = 0; G.clip = null; G.reloading = false;
     saved = { pos: camera.position.clone(), quat: camera.quaternion.clone(), target: controls.target.clone(), fov: camera.fov, bg: scene.background, auto: root.matrixAutoUpdate };
-    buildRange(); world.visible = true; ctx.setGameMode(true);
+    G.hp = 100; G.kills = 0; G.deaths = 0; for (const k in keys) keys[k] = false;
+    buildWorld(); world.visible = true; ctx.setGameMode(true);
     controls.enabled = false; camera.fov = 70; camera.updateProjectionMatrix();
     root.matrixAutoUpdate = false;
     scene.background = new THREE.Color(0x232326);
     makeHud(); updateHud();
     canvas.addEventListener('pointerdown', onDown); window.addEventListener('pointerup', onUp); window.addEventListener('pointermove', onMove);
-    window.addEventListener('keydown', onKey, true); canvas.addEventListener('contextmenu', ctxMenu);
+    window.addEventListener('keydown', onKey, true); window.addEventListener('keyup', onKeyUp, true); canvas.addEventListener('contextmenu', ctxMenu);
     G.on = true; ctx.setFrame(idleFrame());
   }
   function exit() {
     if (!G.on) return; G.on = false; G.firing = false;
     if (document.pointerLockElement) document.exitPointerLock();
     canvas.removeEventListener('pointerdown', onDown); window.removeEventListener('pointerup', onUp); window.removeEventListener('pointermove', onMove);
-    window.removeEventListener('keydown', onKey, true); canvas.removeEventListener('contextmenu', ctxMenu);
+    window.removeEventListener('keydown', onKey, true); window.removeEventListener('keyup', onKeyUp, true); canvas.removeEventListener('contextmenu', ctxMenu);
     fx.splice(0).forEach(e => e.end && e.end());
     world.visible = false; hud && hud.remove(); hud = null;
     root.visible = true; root.matrixAutoUpdate = true; root.position.set(0, 0, 0); root.rotation.set(-Math.PI / 2, 0, 0); root.scale.set(1, 1, 1); root.updateMatrix();
@@ -331,5 +426,5 @@ export function createGame(ctx) {
     controls.target.copy(saved.target); controls.enabled = true; scene.background = saved.bg;
     ctx.setGameMode(false); ctx.setFrame(0);
   }
-  return { enter, exit, update, get on() { return G.on; } };
+  return { enter, exit, update, get on() { return G.on; }, _G: G, _bots: () => bots };
 }
