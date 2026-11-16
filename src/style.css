@@ -228,3 +228,6 @@ body[data-mode="char"] #btnGame{display:none!important}
 .forgecard b{font-size:17px} .forgecard small{color:var(--muted);font-size:12.5px;line-height:1.25}
 #forgeCtl .field.row select{flex:1}
 @media (max-width:1200px){.forgegrid{grid-template-columns:repeat(3,1fr)}}
+
+.arsgrid .arscat{grid-column:1/-1;margin:14px 0 0;font-size:14px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--acc);border-bottom:1px solid rgba(255,255,255,.08);padding-bottom:6px}
+.arsgrid .arscat:first-child{margin-top:0}

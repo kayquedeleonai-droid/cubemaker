@@ -1751,16 +1751,24 @@ function updateForgeUI() {
 function buildArsenalUI() {
   const box = $('#arsenal'); if (!box) return;
   const tabs = $('#arsenalTabs'); tabs.innerHTML = '';
-  const slots = Object.keys(SLOT_NAMES);
-  if (!S.arsSlot) S.arsSlot = 'grenade';
-  slots.forEach(k => { const b = document.createElement('button'); b.textContent = SLOT_NAMES[k] + ` (${ARSENAL.filter(a => a.slot === k).length})`; b.className = k === S.arsSlot ? 'on' : ''; b.onclick = () => { S.arsSlot = k; buildArsenalUI(); }; tabs.appendChild(b); });
+  // armas primeiro; granadas e facas no fim
+  const slots = ['subgun', 'assault', 'sniper', 'carbine', 'pistol', 'shotgun', 'knife', 'grenade'];
+  if (!S.arsSlot) S.arsSlot = 'all';
+  const tab = (k, label) => { const b = document.createElement('button'); b.textContent = label; b.className = k === S.arsSlot ? 'on' : ''; b.onclick = () => { S.arsSlot = k; buildArsenalUI(); }; tabs.appendChild(b); };
+  tab('all', `Todos (${ARSENAL.length})`);
+  slots.forEach(k => tab(k, SLOT_NAMES[k] + ` (${ARSENAL.filter(a => a.slot === k).length})`));
   const fb = $('#forgeFams');
   if (fb && !fb.children.length) Object.entries(FORGE_FAMILIES).forEach(([k, F]) => { const b = document.createElement('button'); b.className = 'forgecard'; b.innerHTML = `<b>${F.n}</b><small>${F.d}</small>`; b.onclick = () => startForge(k); fb.appendChild(b); });
   box.innerHTML = '';
-  ARSENAL.filter(a => a.slot === S.arsSlot).forEach(a => {
+  const card = a => {
     const b = document.createElement('button'); b.className = 'wcard';
     b.innerHTML = `<div class="th" style="background-image:url(presets/${a.id}.png)"></div><span class="tag war${a.war}">${a.war === 1 ? '1ª GUERRA' : '2ª GUERRA'}</span><div class="bd"><b>${a.n}</b><small>${a.c} · substitui ${a.slot}</small><p>${a.d}</p></div>`;
-    b.onclick = () => loadPreset(a.id); box.appendChild(b);
+    b.onclick = () => loadPreset(a.id); return b;
+  };
+  (S.arsSlot === 'all' ? slots : [S.arsSlot]).forEach(k => {
+    const list = ARSENAL.filter(a => a.slot === k); if (!list.length) return;
+    if (S.arsSlot === 'all') { const h = document.createElement('h3'); h.className = 'arscat'; h.textContent = `${SLOT_NAMES[k]} · ${list.length}`; box.appendChild(h); }
+    list.forEach(a => box.appendChild(card(a)));
   });
 }
 
