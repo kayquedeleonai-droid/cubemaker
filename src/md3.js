@@ -231,3 +231,37 @@ export function parseMD2(buf) {
   const anims = []; frames.forEach((fr, i) => { const n = fr.name.replace(/\d+$/, ''); const last = anims[anims.length - 1]; if (last && last.name === n) last.count++; else anims.push({ name: n, start: i, count: 1, speed: 0 }); });
   return { version: 8, name: 'player', flags: 0, nf: nFrames, frames, tagNames: [], tags: frames.map(() => []), surfaces: [S], md2: true, skinW, skinH, md2Anims: anims };
 }
+
+// ---------------------------------------------------------------- MD2 (escrita) — para itens do jogo que o AC carrega como tris.md2
+import { ANORMS } from './anorms.js';
+export function buildMD2(model, final, skinW = 1024, skinH = 1024) {
+  const s = model.surfaces[0], F = final.surfaces[0], nf = F.pos.length, nv = s.nv, nt = s.ntri;
+  // triângulos no arquivo: ordem original (o leitor inverte)
+  const T = []; for (let t = 0; t < nt; t++) T.push(F.tris[t * 3], F.tris[t * 3 + 2], F.tris[t * 3 + 1]);
+  const frameSize = 40 + nv * 4, ofsSkins = 68, ofsST = ofsSkins + 64, ofsTris = ofsST + nv * 4, ofsFrames = ofsTris + nt * 12;
+  const nGl = nt * (1 + 3 * 3) + 1, ofsGl = ofsFrames + nf * frameSize, ofsEnd = ofsGl + nGl * 4;
+  const buf = new ArrayBuffer(ofsEnd), dv = new DataView(buf), u8 = new Uint8Array(buf);
+  const I = (o, v) => dv.setInt32(o, v, true);
+  u8.set([73, 68, 80, 50], 0); I(4, 8); I(8, skinW); I(12, skinH); I(16, frameSize); I(20, 1); I(24, nv); I(28, nv); I(32, nt); I(36, nGl); I(40, nf);
+  I(44, ofsSkins); I(48, ofsST); I(52, ofsTris); I(56, ofsFrames); I(60, ofsGl); I(64, ofsEnd);
+  'skin.jpg'.split('').forEach((c, i) => u8[ofsSkins + i] = c.charCodeAt(0));
+  for (let i = 0; i < nv; i++) { dv.setInt16(ofsST + i * 4, Math.round(s.st[i * 2] * skinW), true); dv.setInt16(ofsST + i * 4 + 2, Math.round(s.st[i * 2 + 1] * skinH), true); }
+  for (let t = 0; t < nt; t++) for (let k = 0; k < 3; k++) { dv.setUint16(ofsTris + t * 12 + k * 2, T[t * 3 + k], true); dv.setUint16(ofsTris + t * 12 + 6 + k * 2, T[t * 3 + k], true); }
+  for (let f = 0; f < nf; f++) {
+    const P = F.pos[f], N = F.nrm[f], o = ofsFrames + f * frameSize, mn = [1e9, 1e9, 1e9], mx = [-1e9, -1e9, -1e9];
+    for (let i = 0; i < nv; i++) for (let k = 0; k < 3; k++) { mn[k] = Math.min(mn[k], P[i * 3 + k]); mx[k] = Math.max(mx[k], P[i * 3 + k]); }
+    const sc = mn.map((m, k) => Math.max(1e-6, (mx[k] - m) / 255));
+    for (let k = 0; k < 3; k++) { dv.setFloat32(o + k * 4, sc[k], true); dv.setFloat32(o + 12 + k * 4, mn[k], true); }
+    ('frame' + f).split('').forEach((c, i) => u8[o + 24 + i] = c.charCodeAt(0));
+    for (let i = 0; i < nv; i++) {
+      for (let k = 0; k < 3; k++) u8[o + 40 + i * 4 + k] = Math.round((P[i * 3 + k] - mn[k]) / sc[k]);
+      let best = 0, bd = -2; const nx = N[i * 3], ny = N[i * 3 + 1], nz = N[i * 3 + 2];
+      for (let a = 0; a < 162; a++) { const d = ANORMS[a][0] * nx + ANORMS[a][1] * ny + ANORMS[a][2] * nz; if (d > bd) { bd = d; best = a; } }
+      u8[o + 40 + i * 4 + 3] = best;
+    }
+  }
+  let g = ofsGl;                                       // comandos GL: uma faixa de 3 vértices por triângulo
+  for (let t = 0; t < nt; t++) { I(g, 3); g += 4; for (let k = 0; k < 3; k++) { const v = T[t * 3 + k]; dv.setFloat32(g, s.st[v * 2], true); dv.setFloat32(g + 4, s.st[v * 2 + 1], true); I(g + 8, v); g += 12; } }
+  I(g, 0);
+  return buf;
+}

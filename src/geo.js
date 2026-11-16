@@ -1,6 +1,7 @@
 // CUBE MAKER — motor de modelagem procedural (peças, malhas, atlas UV e oclusão de ambiente)
 // Unidades em milímetros. +Y = frente, +Z = cima, +X = direita.
 import * as THREE from 'three';
+import { toCreasedNormals, mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 
 // ---------------------------------------------------------------- construtores de peças
 export const B = (g, mat, s, p, o = {}) => ({ kind: o.bev ? 'rbox' : 'box', g, mat, s, p, ...o });         // caixa (bev = chanfro)
@@ -122,13 +123,48 @@ function clean(g) {                                   // só posição + índice
   if (g.index) ng.setIndex([...g.index.array]); else ng.setIndex([...Array(g.attributes.position.count).keys()]);
   g.dispose(); return ng;
 }
-export function partGeometry(p) {
+// modo "acabamento": caixas viram blocos chanfrados e arredondados, perfis ganham chanfro, cilindros ganham bisel nas pontas
+const clampv = (v, a, b) => Math.max(a, Math.min(b, v));
+// arredonda os cantos de um polígono (curva de Bézier em cada vértice)
+export function roundPoly(pts, r, n = 3) {
+  const out = [], N = pts.length;
+  for (let i = 0; i < N; i++) {
+    const a = pts[(i - 1 + N) % N], b = pts[i], c = pts[(i + 1) % N];
+    const l1 = Math.hypot(b[0] - a[0], b[1] - a[1]), l2 = Math.hypot(c[0] - b[0], c[1] - b[1]);
+    const d = Math.min(r, l1 * 0.42, l2 * 0.42);
+    if (d < 0.3) { out.push(b); continue; }
+    const p0 = [b[0] + (a[0] - b[0]) * d / l1, b[1] + (a[1] - b[1]) * d / l1], p2 = [b[0] + (c[0] - b[0]) * d / l2, b[1] + (c[1] - b[1]) * d / l2];
+    for (let k = 0; k <= n; k++) { const t = k / n, u = 1 - t; out.push([u * u * p0[0] + 2 * u * t * b[0] + t * t * p2[0], u * u * p0[1] + 2 * u * t * b[1] + t * t * p2[1]]); }
+  }
+  return out;
+}
+function soften(p) {
+  if (p.hard) return p;
+  if (p.kind === 'box') { const m = Math.min(...p.s); return m < 1.2 ? p : { ...p, kind: 'rbox', bev: clampv(m * 0.16, 0.5, 4), rr: clampv(m * 0.22, 0.6, 6), bevSeg: 2 }; }
+  if (p.kind === 'rbox') return { ...p, rr: p.rr ?? clampv(p.bev * 1.5, 0.6, Math.min(...p.s) * 0.45), bevSeg: Math.max(2, p.bevSeg || 0) };
+  if (p.kind === 'ext') {
+    const ys = p.pts.map(q => q[0]), zs = p.pts.map(q => q[1]), ext = Math.min(Math.max(...ys) - Math.min(...ys), Math.max(...zs) - Math.min(...zs));
+    const wood = /nogueira|faia|madeira|laminado|baquelite|quadriculado|ebano|tabuas/.test(p.mat);
+    const r = p.round ?? (wood ? clampv(ext * 0.22, 2, 16) : clampv(ext * 0.12, 1, 9));
+    return { ...p, pts: roundPoly(p.pts, r), holes: p.holes && p.holes.map(h => roundPoly(h, r * 0.6)), bev: p.bev || clampv(p.w * 0.16, 0.5, 3.5), bevSeg: Math.max(2, p.bevSeg || 0) };
+  }
+  if (p.kind === 'cyl' && !p.open && p.r > 2.5 && p.l > 3) {
+    const r1 = p.r, r2 = p.r2 ?? p.r, c = clampv(Math.min(r1, r2, p.l) * 0.18, 0.4, 3), h = p.l / 2;
+    return { ...p, kind: 'lathe', prof: [[0, -h], [r1 - c, -h], [r1 - c * 0.3, -h + c * 0.3], [r1, -h + c], [r2, h - c], [r2 - c * 0.3, h - c * 0.3], [r2 - c, h], [0, h]], seg: Math.max(p.seg || 0, p.r > 12 ? 24 : 16) };
+  }
+  if (p.kind === 'sph' && !p.seg) return { ...p, seg: [20, 14] };
+  if (p.kind === 'torus' && !p.seg) return { ...p, seg: [8, 24] };
+  if (p.kind === 'seg' && !p.seg) return { ...p, seg: 12 };
+  return p;
+}
+export function partGeometry(p, soft = false) {
+  if (soft) p = soften(p);
   let g;
   switch (p.kind) {
     case 'box': g = new THREE.BoxGeometry(p.s[0], p.s[1], p.s[2]); break;
     case 'rbox': {
       const b = Math.min(p.bev, p.s[1] / 2.2, p.s[2] / 2.2);
-      g = extrudeYZ(roundRect(-p.s[1] / 2, -p.s[2] / 2, p.s[1] / 2, p.s[2] / 2, Math.max(0.01, p.rr ?? b), p.rr ? 3 : 1), p.s[0], { bev: b }); break;
+      g = extrudeYZ(roundRect(-p.s[1] / 2, -p.s[2] / 2, p.s[1] / 2, p.s[2] / 2, Math.max(0.01, Math.min(p.rr ?? b, Math.min(p.s[1], p.s[2]) * 0.45)), p.rr ? 3 : 1), p.s[0], { bev: b, bevSeg: p.bevSeg }); break;
     }
     case 'cyl': g = new THREE.CylinderGeometry(p.r2 ?? p.r, p.r, p.l, p.seg || (p.r > 60 ? 24 : p.r > 25 ? 18 : 12), 1, !!p.open); break;
     case 'lathe': g = new THREE.LatheGeometry(p.prof.map(([r, y]) => new THREE.Vector2(Math.max(0, r), y)), p.seg || 16); break;
@@ -159,6 +195,12 @@ export function partGeometry(p) {
   g.applyMatrix4(new THREE.Matrix4().makeTranslation(p.p[0], p.p[1], p.p[2]));
   if (p.M) g.applyMatrix4(new THREE.Matrix4().fromArray(p.M));                   // transformação extra (montagens/poses)
   if (p.mx) { g.applyMatrix4(new THREE.Matrix4().makeScale(-1, 1, 1)); flipIndex(g); }
+  if (soft) {                                       // normais suavizadas só onde o ângulo é pequeno (chanfros e curvas lisos, faces planas nítidas)
+    const nc = toCreasedNormals(g, 38 * D2R); g.dispose();
+    nc.deleteAttribute('uv');
+    g = mergeVertices(nc, 1e-4); nc.dispose();
+    return g;
+  }
   g.computeVertexNormals();
   return g;
 }
@@ -176,7 +218,7 @@ export function buildPreset(def, opts = {}) {
   const parts = spec.parts.flat().filter(Boolean);
   const AW = opts.W || 1024, AH = opts.H || 512;
   const cells = [], cellOf = parts.map((p, i) => { const key = p.cell ? p.cell + '|' + p.mat : '#' + i; let k = cells.indexOf(key); if (k < 0) { cells.push(key); k = cells.length - 1; } return k; });
-  const geos = parts.map(partGeometry);
+  const geos = parts.map(p => partGeometry(p, !!opts.soft));
   const cb = cells.map(() => new THREE.Box3());
   geos.forEach((g, i) => { g.computeBoundingBox(); cb[cellOf[i]].union(g.boundingBox); });
   // 1º passo: quais projeções cada célula usa

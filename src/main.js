@@ -5,7 +5,7 @@ import JSZip from 'jszip';
 import { createGame } from './game.js';
 import { ARSENAL, buildPreset, atlasCanvas, FORGE_FAMILIES, FORGE_OPTIONS, forgeDef } from './presets.js';
 import { PROPS, PROP_CATS, propDef } from './props.js';
-import { parseMD3, parseMD2, buildMD3, computeIslands, parseCfg, encodeNormal } from './md3.js';
+import { parseMD3, parseMD2, buildMD3, buildMD2, computeIslands, parseCfg, encodeNormal } from './md3.js';
 import { MATS, MAT_ORDER, fbm, TEX, CATS, registerImageTexture } from './materials.js';
 
 const $ = s => document.querySelector(s);
@@ -1282,6 +1282,11 @@ function skinPath(si) {
 async function packageFiles() {
   if (S.mode === 'char') return [{ path: charTarget(), data: await skinBlob(0) }, { path: 'packages/models/playermodels/custom/CUBEMAKER_LEIA-ME.txt', data: new Blob([charCredits()]) }];
   if (S.mode === 'prop') {
+    if (S.prop.pickup) {
+      const d = `packages/models/pickups/${S.prop.pickup}/`, fm = finalModel();
+      return [{ path: d + 'tris.md2', data: new Blob([buildMD2(model, fm)]) }, { path: d + 'tris.md3', data: new Blob([buildMD3(model, fm)]) }, { path: d + 'md3.cfg', data: new Blob([S.cfg]) },
+        { path: d + 'skin.jpg', data: await skinBlob(0, 'image/jpeg') }, { path: d + 'CUBEMAKER_LEIA-ME.txt', data: new Blob([`${S.prop.n} — item do jogo feito no CUBE MAKER v${VERSION}.\nSubstitui o modelo "pickups/${S.prop.pickup}" (só a aparência; o efeito do item continua o mesmo).\nPara voltar ao original, apague esta pasta (na pasta home) ou use "Restaurar original" no CUBE MAKER.\n`]) }];
+    }
     const d = `packages/models/mapmodels/${mapmodelPath()}/`;
     return [{ path: d + 'tris.md3', data: new Blob([exportMD3()]) }, { path: d + 'md3.cfg', data: new Blob([S.cfg]) }, { path: d + 'skin.jpg', data: await skinBlob(0, 'image/jpeg') },
       { path: d + 'CREDITOS.txt', data: new Blob([`${S.prop.n} — mapmodel criado no CUBE MAKER v${VERSION} (cubemaker.kayquedeleon.app)\n\nModelo e textura gerados proceduralmente no CUBE MAKER (obra original, livre para usar nos seus mapas).\n\nPara usar num mapa, acrescente ao .cfg do mapa (packages/maps/<mapa>.cfg):\n${mapmodelLine()}\n\nNo editor do AssaultCube, coloque com /newent mapmodel <número da linha>.\n`]) }];
@@ -1414,7 +1419,8 @@ async function installToGame() {
     if (log.backup.length) log.pastaBackup = `${BACKUP}/${stamp}`;
     await appendLog(log);
     $('#gameLast').textContent = `Última instalação: ${weaponDir()} · ${stamp.replace('_', ' ')}`;
-    if (S.mode === 'prop') toast(`✔ Mapmodel instalado em packages/models/mapmodels/${mapmodelPath()}. Agora acrescente a linha ao .cfg do mapa.`, 'ok');
+    if (S.mode === 'prop' && S.prop.pickup) toast(`✔ Item "${S.prop.pickup}" substituído no jogo (backup em ${BACKUP}). Entre num mapa para ver.`, 'ok');
+    else if (S.mode === 'prop') toast(`✔ Mapmodel instalado em packages/models/mapmodels/${mapmodelPath()}. Agora acrescente a linha ao .cfg do mapa.`, 'ok');
     else toast(`✔ ${weaponDir()} instalada (${files.length} arquivos). Backup em ${BACKUP}. Reinicie o mapa no jogo.`, 'ok');
   } catch (e) {
     toast('Falha ao instalar: ' + e.message + (gameDirKind === 'instalação' ? ' — a pasta de instalação pode exigir administrador; use Documentos\\My Games\\AssaultCube\\v1.3' : ''), 'err');
@@ -1679,7 +1685,7 @@ async function loadPreset(id) {
   try {
     const [md3Buf0, cfg0] = await Promise.all([fetchBuf(base + 'tris_high.md3'), fetch(base + 'md3.cfg').then(r => r.ok ? r.text() : '')]);
     const m0 = parseMD3(md3Buf0), cfgP = parseCfg(cfg0);
-    const Bp = buildPreset(def), M0 = slotBasis(slot, m0), R0 = new THREE.Matrix3().getNormalMatrix(M0);
+    const Bp = buildPreset(def, { soft: S.soft !== false }), M0 = slotBasis(slot, m0), R0 = new THREE.Matrix3().getNormalMatrix(M0);
     const wIdx = m0.surfaces.findIndex(s => s.name === 'weapon'), ow = m0.surfaces[wIdx];
     const frames = rigidFrames(ow);
     const nv = Bp.pos.length / 3, v = new THREE.Vector3();
@@ -1755,7 +1761,7 @@ async function loadProp(id, vars, keepCam) {
   const def = typeof id === 'string' ? propDef(id) : id; if (!def) return;
   const v = propVars(def, vars);
   try {
-    const Bp = buildPreset({ build: () => def.build(v) }, { W: 1024, H: 1024, ground: true });
+    const Bp = buildPreset({ build: () => def.build(v) }, { W: 1024, H: 1024, ground: true, soft: def.cat === 'item' && def.soft !== false });
     const nv = Bp.pos.length / 3, mn = [1e9, 1e9, 1e9], mx = [-1e9, -1e9, -1e9];
     for (let i = 0; i < nv; i++) for (let k = 0; k < 3; k++) { mn[k] = Math.min(mn[k], Bp.pos[i * 3 + k]); mx[k] = Math.max(mx[k], Bp.pos[i * 3 + k]); }
     const off = [-(mn[0] + mx[0]) / 2, -(mn[1] + mx[1]) / 2, -mn[2]];
@@ -1775,7 +1781,7 @@ async function loadProp(id, vars, keepCam) {
     const cfg = propCfg(def, scalePct, mmLine);
     await loadWeapon({ md3Buf: buf, cfgText: cfg, skinImages: [atlasCanvas(Bp)], weaponName: 'mapmodel_' + def.id, origin: { files: [] } });
     S.mode = 'prop'; document.body.dataset.mode = 'prop';
-    S.prop = { id: def.id, n: def.n, cat: def.cat, war: def.war, vars: v, mm: mmLine, dims: dm.map(x => +x.toFixed(2)), scale: scalePct };
+    S.prop = { id: def.id, n: def.n, cat: def.cat, war: def.war, pickup: def.pickup || null, vars: v, mm: mmLine, dims: dm.map(x => +x.toFixed(2)), scale: scalePct };
     S.texK = clamp(0.5 / Bp.density, 0.3, 12);
     S.root = { name: 'Modelo inteiro', pivot: [0, 0, 0], keys: {} };
     // materiais por peça e grupos animáveis
@@ -1834,8 +1840,9 @@ function updatePropUI() {
   });
   const d = S.prop.dims;
   $('#propInfo').innerHTML = `${d[0]} × ${d[1]} × ${d[2]} m <small>(largura × comprimento × altura)</small><br>${model.surfaces[0].ntri} triângulos · ${model.nf > 1 ? model.nf + ' quadros animados' : 'estático'}${S.prop.scale !== 100 ? ` · mdlscale ${S.prop.scale}` : ''}`;
-  $$('.mmline').forEach(e => e.textContent = mapmodelLine());
-  $$('.mmpath').forEach(e => e.textContent = `packages/models/mapmodels/${mapmodelPath()}/`);
+  $$('.mmline').forEach(e => e.textContent = S.prop.pickup ? `substitui o item "pickups/${S.prop.pickup}" do jogo` : mapmodelLine());
+  document.body.classList.toggle('pickup', !!S.prop.pickup);
+  $$('.mmpath').forEach(e => e.textContent = S.prop.pickup ? `packages/models/pickups/${S.prop.pickup}/ (tris.md2 + tris.md3)` : `packages/models/mapmodels/${mapmodelPath()}/`);
 }
 function buildPropUI() {
   const box = $('#propGrid'); if (!box) return;
@@ -1851,7 +1858,7 @@ function buildPropUI() {
     if (S.propCat === 'all') { const h = document.createElement('h3'); h.className = 'arscat'; h.textContent = `${PROP_CATS[k]} · ${list.length}`; box.appendChild(h); }
     list.forEach(p => {
       const b = document.createElement('button'); b.className = 'wcard';
-      b.innerHTML = `<div class="th" style="background-image:url(props/${p.id}.png)"></div><span class="tag war${p.war || 2}">${p.war === 1 ? '1ª GUERRA' : p.war === 2 ? '2ª GUERRA' : '1ª E 2ª GUERRA'}</span><div class="bd"><b>${p.n}</b><small>mapmodel${p.anim ? ' · animado' : ''}${p.vars ? ' · variações' : ''}</small><p>${p.d}</p></div>`;
+      b.innerHTML = `<div class="th" style="background-image:url(props/${p.id}.png)"></div><span class="tag war${p.war || 2}">${p.war === 1 ? '1ª GUERRA' : p.war === 2 ? '2ª GUERRA' : '1ª E 2ª GUERRA'}</span><div class="bd"><b>${p.n}</b><small>${p.pickup ? `item do jogo · pickups/${p.pickup}` : "mapmodel"}${p.anim ? ' · animado' : ''}${p.vars ? ' · variações' : ''}</small><p>${p.d}</p></div>`;
       b.onclick = () => loadProp(p.id); box.appendChild(b);
     });
   });
@@ -2622,7 +2629,7 @@ function thumbnail(w = 480, h = 300, hideHands = false) {
   meshes.forEach(m => m.visible = true); refMan.visible = rv; updateColors(); camera.position.copy(saved.p); controls.target.copy(saved.t); controls.update();
   return out.toDataURL('image/png');
 }
-window.CM = { loadProp, PROPS, addPropToMap, packageFiles, startForge, forgeDef, loadCharacter, applyUniform, addInsignia, UNIFORMS, charTarget, loadPreset, ARSENAL, _i: { THREE, get meshes() { return meshes; }, camera, renderer, scene, root, grid, tagMarker, pivotMarker, controls, resize }, debugBox: () => meshes.map(m => { m.geometry.computeBoundingBox(); const b = m.geometry.boundingBox; return [m.visible, b.min.toArray().map(v => +v.toFixed(1)), b.max.toArray().map(v => +v.toFixed(1)), m.geometry.index.count, m.geometry.attributes.position.array.slice(0, 3).join(',')]; }), thumbnail, S, get model() { return model; }, get skins() { return skins; }, loadBundled, loadDemo, exportMD3, createGroup, selectIsland, assignMaterial, applyPreset, applyAnimBank, runGen, setFrame, frameCamera, setTool, parseMD3, undo, captureState, goStep, game, placeDecal, addPrimitive, assembleClips, interpKey };
+window.CM = { loadProp, PROPS, addPropToMap, packageFiles, startForge, forgeDef, loadCharacter, applyUniform, addInsignia, UNIFORMS, charTarget, loadPreset, ARSENAL, _i: { THREE, get meshes() { return meshes; }, camera, renderer, scene, root, grid, tagMarker, pivotMarker, controls, resize }, debugBox: () => meshes.map(m => { m.geometry.computeBoundingBox(); const b = m.geometry.boundingBox; return [m.visible, b.min.toArray().map(v => +v.toFixed(1)), b.max.toArray().map(v => +v.toFixed(1)), m.geometry.index.count, m.geometry.attributes.position.array.slice(0, 3).join(',')]; }), thumbnail, S, get model() { return model; }, get skins() { return skins; }, loadBundled, loadDemo, exportMD3, createGroup, selectIsland, assignMaterial, applyPreset, applyAnimBank, runGen, setFrame, frameCamera, setTool, parseMD3, parseMD2, undo, captureState, goStep, game, placeDecal, addPrimitive, assembleClips, interpKey };
 {
   const h = location.hash.slice(1);
   if (h === 'demo') loadBundled('subgun'); else if (WEAPONS[h]) loadBundled(h);

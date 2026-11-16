@@ -15,9 +15,9 @@ async def main():
         for i in ids:
             t0 = time.time()
             await pg.evaluate(f"CM.loadProp('{i}')"); await pg.wait_for_timeout(200)
-            r = await pg.evaluate("""async()=>{const m=CM.model, s=m.surfaces[0]; const files=await CM.packageFiles(); const md3=files.find(f=>/tris\\.md3$/.test(f.path));
+            r = await pg.evaluate("""async()=>{const m=CM.model, s=m.surfaces[0]; const files=await CM.packageFiles(); const md3=files.find(f=>/tris\\.md3$/.test(f.path)); const md2=files.find(f=>/tris\\.md2$/.test(f.path)); if(md2){const m=CM.parseMD2(await md2.data.arrayBuffer()); window.__md2={nv:m.surfaces[0].nv,tri:m.surfaces[0].ntri};} else window.__md2=null;
               const m2=CM.parseMD3(await md3.data.arrayBuffer()); let mx=0; m2.surfaces[0].pos.forEach(P=>{for(const v of P) mx=Math.max(mx,Math.abs(v))});
-              return {tri:s.ntri, isl:s.nIsl, nf:m2.nf, maxc:+mx.toFixed(1), dims:CM.S.prop.dims, mm:CM.S.prop.mm, groups:CM.S.groups.map(g=>g.name).join(','), files:files.map(f=>f.path.split('/').pop()).join(','), texK:+CM.S.texK.toFixed(2)}}""")
+              return {tri:s.ntri, isl:s.nIsl, nf:m2.nf, maxc:+mx.toFixed(1), dims:CM.S.prop.dims, mm:CM.S.prop.mm, groups:CM.S.groups.map(g=>g.name).join(','), files:files.map(f=>f.path.split('/').pop()).join(','), texK:+CM.S.texK.toFixed(2), md2:window.__md2}}""")
             print(i, f'{time.time()-t0:.1f}s', json.dumps(r, ensure_ascii=False))
             if THUMBS:
                 url = await pg.evaluate("CM.thumbnail(480,300,true)")

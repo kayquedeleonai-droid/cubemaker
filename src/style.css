@@ -237,3 +237,4 @@ body:not([data-mode="prop"]) .proponly{display:none!important}
 .propinfo{font:12.5px var(--mono);color:var(--text);background:#141519;border:1px solid var(--line);border-radius:4px;padding:8px;margin:8px 0}
 .propinfo small{color:var(--muted)}
 code.mmline{flex:1;font:11.5px var(--mono);background:#141519;border:1px solid var(--line);border-radius:3px;padding:5px 6px;overflow-wrap:anywhere}
+body.pickup .proponly #mapName,body.pickup .proponly #btnAddMap,body.pickup .proponly #mapIdx,body.pickup .btnCopyMM{display:none!important}

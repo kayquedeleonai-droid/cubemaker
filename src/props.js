@@ -2,6 +2,7 @@
 // Milímetros, +Y = frente, +Z = cima. O modelo é centralizado e apoiado no chão (z = 0) na hora de montar.
 import * as THREE from 'three';
 import { B, C, L, E, SP, T, SG, LO, W, TU, PI, helix, starPts, circlePts, roundRect, xform, TRS } from './geo.js';
+import { HD } from './arsenal_hd.js';
 
 const D2R = Math.PI / 180;
 const V3 = (x, y, z) => new THREE.Vector3(x, y, z);
@@ -303,10 +304,34 @@ function tank(o) {
 }
 
 // ---------------------------------------------------------------- catálogo
-export const PROP_CATS = { fort: 'Fortificações', veic: 'Veículos e tanques', aviao: 'Aviões', art: 'Artilharia e armas pesadas', obj: 'Objetos e suprimentos', cen: 'Cenário e construções', sold: 'Soldados caídos' };
+export const PROP_CATS = { item: 'Itens do jogo (substituem os do AC)', fort: 'Fortificações', veic: 'Veículos e tanques', aviao: 'Aviões', art: 'Artilharia e armas pesadas', obj: 'Objetos e suprimentos', cen: 'Cenário e construções', sold: 'Soldados caídos' };
 const soldierVars = (pose, uni) => ({ pose: { n: 'Pose', o: POSE_OPTS, v: pose }, uni: { n: 'Uniforme', o: UNIFORM_OPTS, v: uni } });
 
+const ESC = { n: 'Tamanho no jogo', o: [['1', 'Real'], ['1.5', '1,5×'], ['2', '2×'], ['3', '3×']], v: '1.5' };
 export const PROPS = [
+
+  // ================================================== ITENS DO JOGO (pickups do AC: munição, vida, colete, granadas, akimbo)
+  { id: 'item_ammobox', cat: 'item', pickup: 'ammobox', war: 2, n: 'Munição → caixote de madeira', d: 'Substitui a caixa de munição do AC por um caixote de munição de madeira com alças e chapa de identificação.', mm: '', vars: { esc: ESC },
+    build: v => ({ parts: xform([...crate(0, 0, 0, 300, 460, 240, 'caixaVerde'), B(null, 'amarelo', [4, 200, 60], [152, 0, 150], { cell: 'plaqueta' }), B(null, 'preto', [4, 160, 14], [154, 0, 150], { cell: 'texto' }), SG(null, 'couroMarrom', [-150, -120, 244], [150, -120, 244], 8, { seg: 6, cell: 'cinta' }), SG(null, 'couroMarrom', [-150, 120, 244], [150, 120, 244], 8, { seg: 6, cell: 'cinta' })], TRS([0, 0, 0], [0, 0, 0], +v.esc)) }) },
+  { id: 'item_pistolclips', cat: 'item', pickup: 'pistolclips', war: 2, n: 'Pentes de pistola', d: 'Três carregadores de pistola com projéteis à mostra, sobre um pano.', mm: '', vars: { esc: ESC },
+    build: v => { const mag = (x, y, z, r) => xform([B(null, 'acoPreto', [24, 34, 130], [0, 0, 65], { cell: 'pente' }), B(null, 'nogueira', [28, 38, 14], [0, 0, 6], { cell: 'base' }), L(null, 'latao', [[0, 0], [8, 0], [8, 10], [5, 18], [0, 20]], [0, 4, 130], { axis: 'z', seg: 10, cell: 'bala' })], TRS([x, y, z], r));
+      return { parts: xform([B(null, 'lonaVerde', [260, 220, 6], [0, 0, 3], { cell: 'pano' }), ...mag(-60, 0, 6, [0, 0, 10]), ...mag(20, -20, 24, [0, 90, 80]), ...mag(70, 60, 22, [-90, 0, 30])], TRS([0, 0, 0], [0, 0, 0], +v.esc)) }; } },
+  { id: 'item_nade', cat: 'item', pickup: 'nade', war: 2, n: 'Granadas', d: 'Uma Stielhandgranate deitada e uma Mk 2 "abacaxi" em pé.', mm: '', vars: { esc: ESC },
+    build: v => ({ parts: xform([...xform([C(null, 'faia', 15, 280, [0, 0, 0], { seg: 14, cell: 'cabo' }), C(null, 'feldgrau', 34, 76, [0, 175, 0], { seg: 18, cell: 'cabeca' }), C(null, 'acoGasto', 16, 12, [0, -146, 0], { seg: 12, cell: 'tampa' })], TRS([-60, 0, 34], [0, 0, 20])),
+      L(null, 'abacaxi', [[0, 0], [22, 2], [30, 14], [31, 50], [28, 74], [16, 86], [0, 88]], [70, 40, 0], { axis: 'z', seg: 16, cell: 'mk2' }), C(null, 'acoGasto', 10, 24, [70, 40, 96], { axis: 'z', seg: 10, cell: 'espoleta' }),
+      E(null, 'acoGasto', [[0, 0], [10, 0], [6, -60], [0, -64]], 12, [70, 52, 104], { rot: [0, 0, 0], cell: 'alavanca' }), T(null, 'acoGasto', 12, 2, [56, 40, 104], { rot: [0, 90, 0], seg: [4, 12], cell: 'argola' })], TRS([0, 0, 0], [0, 0, 0], +v.esc)) }) },
+  { id: 'item_health', cat: 'item', pickup: 'health', war: 2, n: 'Kit médico → bolsa de enfermeiro', d: 'Bolsa de lona do padioleiro com a cruz vermelha em círculo branco e alça.', mm: '', vars: { esc: ESC },
+    build: v => ({ parts: xform([B(null, 'lona', [340, 140, 240], [0, 0, 120], { bev: 18, cell: 'bolsa' }), B(null, 'lona', [348, 150, 90], [0, 0, 210], { bev: 12, rot: [-8, 0, 0], cell: 'aba' }),
+      ...[-1, 1].flatMap(s2 => [C(null, 'branco', 70, 4, [0, s2 * 72, 120], { axis: 'y', seg: 24, cell: 'disco' }), B(null, 'vermelho', [90, 4, 26], [0, s2 * 75, 120], { cell: 'cruz' }), B(null, 'vermelho', [26, 4, 90], [0, s2 * 75, 120], { cell: 'cruz' })]),
+      TU(null, 'lona', [[-170, 0, 220], [-150, 0, 380], [0, 0, 440], [150, 0, 380], [170, 0, 220]], 12, { rs: 6, cell: 'alca' }), B(null, 'latao', [30, 10, 24], [0, 76, 170], { cell: 'fivela' })], TRS([0, 0, 0], [0, 0, 0], +v.esc)) }) },
+  { id: 'item_helmet', cat: 'item', pickup: 'helmet', war: 2, soft: false, n: 'Capacete (proteção)', d: 'Capacete M1 com rede de camuflagem e jugular — substitui o capacete do AC.', mm: '', vars: { esc: ESC, mod: { n: 'Modelo', o: [['m1', 'M1 (EUA)'], ['stahl', 'Stahlhelm'], ['brodie', 'Brodie'], ['ssh40', 'SSh-40']], v: 'm1' } },
+    build: v => ({ parts: xform([...helmet(v.mod, v.mod === 'stahl' ? 'feldgrau' : v.mod === 'ssh40' ? 'verdeSov' : 'oliva'), T(null, 'couroMarrom', 120, 6, [0, 20, -40], { rot: [0, 90, 0], arc: 180, seg: [4, 14], sc: [1, 1, 0.6], cell: 'jugular' })], TRS([0, 0, 50], [0, 0, 0], +v.esc)) }) },
+  { id: 'item_kevlar', cat: 'item', pickup: 'kevlar', war: 2, n: 'Colete → colete antiestilhaço', d: 'Colete de lona com placas costuradas, estilo M1 flak vest.', mm: '', vars: { esc: ESC },
+    build: v => ({ parts: xform([LO(null, 'lonaVerde', [{ y: 0, w: 380, ht: 120, hb: 110 }, { y: 260, w: 420, ht: 130, hb: 120 }, { y: 440, w: 440, ht: 120, hb: 110 }, { y: 520, w: 300, ht: 80, hb: 80 }], [0, 0, 0], { rot: [90, 0, 0], seg: 16, cell: 'colete' }),
+      ...[-1, 1].map(s2 => B(null, 'couroMarrom', [60, 250, 24], [s2 * 110, 0, 498], { bev: 6, cell: 'alca' })), B(null, 'couroMarrom', [400, 260, 30], [0, 0, 20], { bev: 8, cell: 'cinto' })], TRS([0, 0, 0], [0, 0, 0], +v.esc)) }) },
+  { id: 'item_akimbo', cat: 'item', pickup: 'akimbo', war: 2, soft: false, n: 'Akimbo → par de pistolas', d: 'Duas Colt 1911 cruzadas no chão (pega o modelo de alta fidelidade do arsenal).', mm: '', vars: { esc: ESC },
+    build: v => { const pist = HD.colt1911().parts.map(p => ({ ...p, g: null }));
+      return { parts: xform([...xform(pist, TRS([-40, 0, 14], [0, 90, 20])), ...xform(pist, TRS([40, 30, 42], [0, -90, 160]))], TRS([0, 0, 0], [0, 0, 0], +v.esc)) }; } },
   // ================================================== FORTIFICAÇÕES
   { id: 'sacos_muro', cat: 'fort', war: 0, n: 'Muro de sacos de areia', d: 'Três fiadas de sacos desencontrados, 1,6 m de largura.', mm: '3 3 0 0', vars: { cor: { n: 'Saco', o: [['sacoAreia', 'Juta'], ['sacoAreiaV', 'Verde']], v: 'sacoAreia' } },
     build: v => ({ parts: [0, 1, 2, 3].flatMap(r => Array.from({ length: r % 2 ? 2 : 3 }, (_, i) => sandbag((i - (r % 2 ? 0.5 : 1)) * 560 + (r % 2) * 0, rnd(r * 9 + i) * 40 - 20, 70 + r * 130, 90, v.cor))) }) },
