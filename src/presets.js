@@ -1,15 +1,10 @@
 // CUBE MAKER — Arsenal: modelos procedurais de armas e itens da 1ª e 2ª Guerra Mundial
 // Unidades em milímetros. Armas de fogo: origem no eixo do cano logo acima do gatilho, +Y = frente (cano), +Z = cima, +X = direita.
 // Facas: origem no meio do cabo, +Y = ponta da lâmina, +Z = lado do dorso. Granadas: origem onde a mão segura, +Y = para cima (espoleta).
-import * as THREE from 'three';
 
-// ---------------------------------------------------------------- peças
-const B = (g, mat, s, p, o = {}) => ({ kind: 'box', g, mat, s, p, ...o });
-const C = (g, mat, r, l, p, o = {}) => ({ kind: 'cyl', g, mat, r, l, p, ...o });
-const L = (g, mat, prof, p, o = {}) => ({ kind: 'lathe', g, mat, prof, p, ...o });
-const E = (g, mat, pts, w, p = [0, 0, 0], o = {}) => ({ kind: 'ext', g, mat, pts, w, p, ...o });
-const SP = (g, mat, r, p, o = {}) => ({ kind: 'sph', g, mat, r, p, ...o });
-const T = (g, mat, R, tube, p, o = {}) => ({ kind: 'torus', g, mat, R, tube, p, ...o });
+import { B, C, L, E, SP, T, SG, LO, W, TU, PI, helix, starPts, circlePts, roundRect, mirrorX, xform, TRS, buildPreset, atlasCanvas } from './geo.js';
+export { buildPreset, atlasCanvas };
+import { HD, HD_FAMILY, NEW_WEAPONS } from './arsenal_hd.js';
 
 // partes comuns
 function trigger(metal, h = 18, y = 0) {
@@ -394,103 +389,11 @@ export const ARSENAL = [
       ...trigger('parkCinza', 30, -10),
     ], muzzle: 550, support: [0, 160, -40], port: [0, 20, -30] }) },
 ];
+// modelos em alta fidelidade substituem os antigos (o antigo fica em buildLo) e entram as armas novas
+ARSENAL.forEach(a => { const f = HD[a.id] || HD_FAMILY[a.id]; if (f) { a.buildLo = a.build; a.build = f; a.hd = true; } });
+NEW_WEAPONS.forEach(w => { const i = ARSENAL.map(a => a.slot).lastIndexOf(w.slot); ARSENAL.splice(i + 1, 0, { ...w, hd: true, novo: true }); });
 
 // ---------------------------------------------------------------- geometria
-const D2R = Math.PI / 180;
-function partGeometry(p) {
-  let g;
-  switch (p.kind) {
-    case 'box': g = new THREE.BoxGeometry(p.s[0], p.s[1], p.s[2]); break;
-    case 'cyl': g = new THREE.CylinderGeometry(p.r2 ?? p.r, p.r, p.l, p.seg || (p.r > 25 ? 16 : 10), 1); break;
-    case 'lathe': g = new THREE.LatheGeometry(p.prof.map(([r, y]) => new THREE.Vector2(Math.max(0, r), y)), p.seg || 12); break;
-    case 'sph': g = new THREE.SphereGeometry(1, 14, 10); g.scale(p.r[0], p.r[1], p.r[2]); break;
-    case 'torus': g = new THREE.TorusGeometry(p.R, p.tube, 6, 14); break;
-    case 'ext': {
-      const sh = new THREE.Shape(p.pts.map(([y, z]) => new THREE.Vector2(y, z)));
-      g = new THREE.ExtrudeGeometry(sh, { depth: p.w, bevelEnabled: false });
-      // (x_e, y_e, z_e) → (x = z_e - w/2, y = x_e, z = y_e)
-      g.applyMatrix4(new THREE.Matrix4().set(0, 0, 1, -p.w / 2, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1));
-      break;
-    }
-  }
-  if (p.axis === 'x') g.applyMatrix4(new THREE.Matrix4().makeRotationZ(-Math.PI / 2));
-  if (p.axis === 'z') g.applyMatrix4(new THREE.Matrix4().makeRotationX(Math.PI / 2));
-  if (p.rot) g.applyMatrix4(new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(p.rot[0] * D2R, p.rot[1] * D2R, p.rot[2] * D2R)));
-  g.applyMatrix4(new THREE.Matrix4().makeTranslation(p.p[0], p.p[1], p.p[2]));
-  if (!g.index) { const n = g.attributes.position.count; g.setIndex([...Array(n).keys()]); }
-  g.computeVertexNormals();
-  return g;
-}
-
-// Monta a malha final em mm com atlas UV: cada "célula" (parte) ganha um quadro da textura,
-// dividido em 3 projeções (faces X, Y e Z) para não esticar.
-export function buildPreset(def) {
-  const spec = def.build();
-  const parts = spec.parts;
-  const cells = [], cellOf = parts.map((p, i) => { const key = p.cell ? p.cell + '|' + p.mat : '#' + i; let k = cells.indexOf(key); if (k < 0) { cells.push(key); k = cells.length - 1; } return k; });
-  const n = cells.length, cols = Math.ceil(Math.sqrt(n * 2)), rows = Math.ceil(n / cols);
-  const cw = 1 / cols, ch = 1 / rows, pad = 0.004;
-  const pos = [], nrm = [], uv = [], tris = [], vpart = [];
-  // bbox por célula (para normalizar a projeção)
-  const geos = parts.map(partGeometry);
-  const cb = cells.map(() => new THREE.Box3());
-  geos.forEach((g, i) => { g.computeBoundingBox(); cb[cellOf[i]].union(g.boundingBox); });
-  geos.forEach((g, pi) => {
-    const P = g.attributes.position.array, N = g.attributes.normal.array, I = g.index.array, ci = cellOf[pi];
-    const bx = cb[ci], mn = bx.min, sz = bx.getSize(new THREE.Vector3()).max(new THREE.Vector3(1e-3, 1e-3, 1e-3));
-    const c0 = (ci % cols) * cw, r0 = Math.floor(ci / cols) * ch;
-    const sub = [[c0 + pad, r0 + pad, cw * 0.5 - 2 * pad, ch - 2 * pad], [c0 + cw * 0.5 + pad, r0 + pad, cw * 0.5 - 2 * pad, ch * 0.5 - 2 * pad], [c0 + cw * 0.5 + pad, r0 + ch * 0.5 + pad, cw * 0.5 - 2 * pad, ch * 0.5 - 2 * pad]];
-    const map = new Map();
-    for (let t = 0; t < I.length; t += 3) {
-      const a = I[t], b = I[t + 1], c = I[t + 2];
-      const ux = P[b * 3] - P[a * 3], uy = P[b * 3 + 1] - P[a * 3 + 1], uz = P[b * 3 + 2] - P[a * 3 + 2];
-      const vx = P[c * 3] - P[a * 3], vy = P[c * 3 + 1] - P[a * 3 + 1], vz = P[c * 3 + 2] - P[a * 3 + 2];
-      const fx = Math.abs(uy * vz - uz * vy), fy = Math.abs(uz * vx - ux * vz), fz = Math.abs(ux * vy - uy * vx);
-      if (fx + fy + fz < 1e-9) continue;
-      const ax = fx >= fy && fx >= fz ? 0 : fy >= fz ? 1 : 2;
-      const out = [];
-      for (const v of [a, b, c]) {
-        const key = v * 3 + ax; let idx = map.get(key);
-        if (idx === undefined) {
-          idx = pos.length / 3; map.set(key, idx);
-          const x = P[v * 3], y = P[v * 3 + 1], z = P[v * 3 + 2];
-          pos.push(x, y, z); nrm.push(N[v * 3], N[v * 3 + 1], N[v * 3 + 2]); vpart.push(pi);
-          const [s0, s1] = ax === 0 ? [(y - mn.y) / sz.y, 1 - (z - mn.z) / sz.z] : ax === 1 ? [(x - mn.x) / sz.x, 1 - (z - mn.z) / sz.z] : [(x - mn.x) / sz.x, (y - mn.y) / sz.y];
-          const r = sub[ax]; uv.push(r[0] + s0 * r[2], r[1] + s1 * r[3]);
-        }
-        out.push(idx);
-      }
-      // MD3/AC desenha com a ordem de vértices invertida em relação ao three.js
-      tris.push(out[0], out[2], out[1]);
-    }
-    g.dispose();
-  });
-  return { spec, parts, cells, cellOf, cols, rows, pos, nrm, uv, tris, vpart };
-}
-
-// textura base do atlas: cinza neutro com ruído fino e bordas escurecidas (detalhe para os materiais)
-export function atlasCanvas(B, w = 1024, h = 512) {
-  const c = document.createElement('canvas'); c.width = w; c.height = h;
-  const x = c.getContext('2d');
-  x.fillStyle = '#5a5a5a'; x.fillRect(0, 0, w, h);
-  const cw = w / B.cols, ch = h / B.rows;
-  for (let i = 0; i < B.cells.length; i++) {
-    const c0 = (i % B.cols) * cw, r0 = Math.floor(i / B.cols) * ch;
-    [[0, 0, 0.5, 1], [0.5, 0, 0.5, 0.5], [0.5, 0.5, 0.5, 0.5]].forEach(([a, b, ww, hh]) => {
-      const X = c0 + a * cw, Y = r0 + b * ch, W = ww * cw, H = hh * ch;
-      const g = x.createLinearGradient(X, Y, X, Y + H); g.addColorStop(0, '#9a9a9a'); g.addColorStop(0.5, '#8c8c8c'); g.addColorStop(1, '#7a7a7a');
-      x.fillStyle = g; x.fillRect(X, Y, W, H);
-      x.strokeStyle = 'rgba(30,30,30,0.55)'; x.lineWidth = 3; x.strokeRect(X + 2, Y + 2, W - 4, H - 4);
-      x.strokeStyle = 'rgba(220,220,220,0.18)'; x.lineWidth = 1; x.strokeRect(X + 5, Y + 5, W - 10, H - 10);
-    });
-  }
-  const im = x.getImageData(0, 0, w, h), d = im.data;
-  for (let i = 0; i < d.length; i += 4) { const n = (Math.random() - 0.5) * 14; d[i] += n; d[i + 1] += n; d[i + 2] += n; }
-  x.putImageData(im, 0, 0);
-  return c;
-}
-
-// ================================================================ FORJA: arma do zero por parâmetros
 export const FORGE_FAMILIES = {
   pistol:  { n: 'Pistola', slot: 'pistol', d: 'Slide, armação e empunhadura.', p: { era: 'ww2', barrel: 110, body: 190, stock: 'nenhuma', mag: 'cabo', magLen: 30, grip: 'pistola', fore: 'nao', sight: 'ferro', muzzle: 'nenhum', wood: 'nogueira', metal: 'acoOxidado', jacket: 'nao', bipod: 'nao', bayonet: 'nao', side: 'direita' } },
   smg:     { n: 'Submetralhadora', slot: 'subgun', d: 'Compacta, automática, ferrolho aberto.', p: { era: 'ww2', barrel: 150, body: 260, stock: 'dobravel', mag: 'reto', magLen: 200, grip: 'pistola', fore: 'nao', sight: 'ferro', muzzle: 'nenhum', wood: 'baquelite', metal: 'acoOxidado', jacket: 'sim', bipod: 'nao', bayonet: 'nao', side: 'esquerda' } },

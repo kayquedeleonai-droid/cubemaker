@@ -231,3 +231,9 @@ body[data-mode="char"] #btnGame{display:none!important}
 
 .arsgrid .arscat{grid-column:1/-1;margin:14px 0 0;font-size:14px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--acc);border-bottom:1px solid rgba(255,255,255,.08);padding-bottom:6px}
 .arsgrid .arscat:first-child{margin-top:0}
+.wcard .tag.novo{left:8px;right:auto;color:#9fe0a8;border-color:#3a6a44}
+body[data-mode="prop"] .wonly,body[data-mode="prop"] .weapononly,body[data-mode="prop"] #btnGame{display:none!important}
+body:not([data-mode="prop"]) .proponly{display:none!important}
+.propinfo{font:12.5px var(--mono);color:var(--text);background:#141519;border:1px solid var(--line);border-radius:4px;padding:8px;margin:8px 0}
+.propinfo small{color:var(--muted)}
+code.mmline{flex:1;font:11.5px var(--mono);background:#141519;border:1px solid var(--line);border-radius:3px;padding:5px 6px;overflow-wrap:anywhere}

@@ -133,6 +133,64 @@ export const TEX = {
     const a = fbm(x * 0.022, y * 0.022), b = fbm(x * 0.03 + 9, y * 0.03 + 4);
     return a > 0.62 ? [62, 70, 44] : b > 0.6 ? [128, 120, 84] : a < 0.38 ? [96, 104, 66] : [108, 118, 78];
   },
+  // ---- cenário e veículos (1 unidade ≈ 2 mm nos mapmodels)
+  burlap(x, y, m) {                     // juta de saco de areia
+    const w = (((x | 0) % 3) === 0 ? 0.86 : 1) * (((y | 0) % 3) === 0 ? 0.88 : 1);
+    const n = 0.78 + 0.34 * fbm(x * 0.02, y * 0.02) + 0.1 * (h2(x | 0, y | 0) - 0.5);
+    return [m.c[0] * w * n, m.c[1] * w * n, m.c[2] * w * n];
+  },
+  brick(x, y) {                         // tijolo aparente
+    const row = Math.floor(y / 37), off = (row & 1) * 57, col = Math.floor((x + off) / 115);
+    const bx = ((x + off) % 115 + 115) % 115, by = ((y % 37) + 37) % 37;
+    if (bx < 5 || by < 5) return mix([150, 144, 132], [118, 112, 102], fbm(x * 0.1, y * 0.1));
+    const hb = h2(col, row), n = fbm(x * 0.05, y * 0.05);
+    return mix(hb < 0.3 ? [128, 58, 40] : hb < 0.7 ? [146, 72, 48] : [112, 54, 40], [96, 44, 30], n * 0.6).map(v => v * (0.9 + 0.2 * h2(x | 0, y | 0) * 0.5));
+  },
+  reboco(x, y) {                        // reboco caindo sobre tijolo
+    const n = fbm(x * 0.006, y * 0.006) + 0.15 * fbm(x * 0.05, y * 0.05);
+    return n > 0.56 ? TEX.brick(x, y) : mix([186, 178, 160], [150, 142, 126], fbm(x * 0.03, y * 0.03));
+  },
+  concrete(x, y) {                      // concreto com marcas de forma
+    const n = fbm(x * 0.02, y * 0.02), pit = h2(x | 0, y | 0) > 0.985 ? 0.6 : 1, f = ((y % 150) + 150) % 150 < 2 ? 0.86 : 1;
+    return mix([150, 148, 140], [116, 114, 108], n).map(v => v * pit * f);
+  },
+  planks(x, y, m) {                     // tábuas de madeira velha
+    const b = Math.floor(x / 70), bx = ((x % 70) + 70) % 70, hb = h2(b, 7);
+    if (bx < 2.5) return [m.c[0] * 0.35, m.c[1] * 0.35, m.c[2] * 0.35];
+    const g = 0.9 + 0.07 * Math.sin(y * 0.22 + x * 0.05 + fbm(x * 0.09, y * 0.01 + b) * 5) + 0.06 * (fbm(x * 0.4, y * 0.03 + b * 3) - 0.5);
+    const k = (0.8 + 0.35 * hb) * g;
+    return [m.c[0] * k, m.c[1] * k, m.c[2] * k];
+  },
+  straw(x, y) { const s = fbm(x * 0.3, y * 0.012); return mix([196, 168, 96], [140, 112, 58], s).map(v => v * (0.85 + 0.3 * h2(x | 0, (y / 8) | 0))); },
+  mud(x, y) { const n = fbm(x * 0.012, y * 0.012), f = fbm(x * 0.1, y * 0.1); return n > 0.62 ? mix([70, 58, 44], [52, 44, 34], f) : mix([104, 86, 62], [84, 70, 52], f); },
+  rafCamo(x, y) {                       // RAF: dark green / dark earth
+    const n = fbm(x * 0.0035 + 3, y * 0.0035) + 0.08 * fbm(x * 0.03, y * 0.03);
+    return n > 0.5 ? [64, 74, 46] : [108, 88, 60];
+  },
+  rlmSplinter(x, y) {                   // Luftwaffe RLM 74/75 em lascas
+    const u = x * 0.8 + y * 0.6, v = -x * 0.6 + y * 0.8;
+    const h = h2(Math.floor(u / 260), Math.floor(v / 190));
+    return h < 0.5 ? [84, 92, 88] : [96, 94, 104];
+  },
+  hinterhalt(x, y) {                    // tanque: dunkelgelb com manchas verdes e marrons
+    const a = fbm(x * 0.004, y * 0.004), b = fbm(x * 0.005 + 8, y * 0.005 + 2);
+    return a > 0.6 ? [70, 80, 48] : b > 0.62 ? [102, 70, 46] : mix([168, 144, 90], [150, 128, 80], fbm(x * 0.03, y * 0.03));
+  },
+  lozenge(x, y) {                       // losangos da Grande Guerra (Alemanha)
+    const u = x + y * 0.55, v = y - x * 0.35, cu = Math.floor(u / 90), cv = Math.floor(v / 70), h = h2(cu * 3 + 1, cv * 7 + 2);
+    const pal = [[88, 70, 96], [70, 92, 76], [120, 104, 70], [62, 70, 96], [140, 118, 84]];
+    return pal[Math.floor(h * 5) % 5];
+  },
+  linen(x, y) {                         // linho envernizado de avião da 1ª Guerra
+    const rib = ((x % 75) + 75) % 75 < 4 ? 0.82 : 1;
+    return mix([206, 188, 146], [186, 168, 126], fbm(x * 0.02, y * 0.02)).map(v => v * rib);
+  },
+  mapa(x, y) {                          // mapa topográfico
+    const n = fbm(x * 0.01, y * 0.01), c = (n * 14) % 1;
+    if (((x % 80) + 80) % 80 < 1.5 || ((y % 80) + 80) % 80 < 1.5) return [120, 130, 150];
+    if (c < 0.07) return [150, 110, 70];
+    return n > 0.62 ? [170, 196, 150] : [222, 212, 178];
+  },
   img(x, y, m) {                        // textura importada (repete)
     const I = m.img, ix = ((Math.floor(x * m.scale) % I.w) + I.w) % I.w, iy = ((Math.floor(y * m.scale) % I.h) + I.h) % I.h, j = (iy * I.w + ix) * 4;
     return [I.data[j], I.data[j + 1], I.data[j + 2]];
@@ -156,8 +214,48 @@ const BANK = {
   ebano:        { n: 'Madeira escura', tex: 'ebano', cat: 'madeira', wear: 0.6, wearColor: [130, 90, 60] },
   tigre:        { n: 'Madeira tigrada', tex: 'tigre', cat: 'madeira', wear: 0.6, wearColor: [196, 150, 100] },
 };
+
+// ---- cenário, veículos, aviões e soldados (mapmodels)
+const SCENE = {
+  pele:        { n: 'Pele', c: [186, 140, 110], p: 'paint', wear: 0, cat: 'detalhe' },
+  borracha:    { n: 'Borracha (pneu)', c: [34, 34, 34], p: 'paint', wear: 0.2, wearColor: [70, 68, 64], cat: 'detalhe' },
+  vidro:       { n: 'Vidro', c: [44, 62, 72], p: 'paint', wear: 0, cat: 'detalhe' },
+  branco:      { n: 'Branco', c: [214, 212, 204], p: 'paint', wear: 0.4, wearColor: [120, 118, 112], cat: 'pintura' },
+  vermelho:    { n: 'Vermelho', c: [150, 34, 28], p: 'paint', wear: 0.6, wearColor: [150, 148, 140], cat: 'pintura' },
+  preto:       { n: 'Preto fosco', c: [26, 26, 26], p: 'paint', wear: 0.5, wearColor: [120, 118, 112], cat: 'pintura' },
+  amarelo:     { n: 'Amarelo', c: [196, 160, 40], p: 'paint', wear: 0.5, wearColor: [150, 148, 140], cat: 'pintura' },
+  azulRoundel: { n: 'Azul (insígnia)', c: [36, 52, 104], p: 'paint', wear: 0.5, wearColor: [150, 148, 140], cat: 'pintura' },
+  azulHorizonte:{ n: 'Azul-horizonte (Adrian)', c: [104, 122, 140], p: 'paint', wear: 0.8, wearColor: [150, 150, 144], cat: 'pintura' },
+  cinzaPanzer: { n: 'Cinza Panzer', c: [62, 64, 66], p: 'paint', wear: 0.9, wearColor: [140, 138, 132], cat: 'pintura' },
+  verdeSov:    { n: 'Verde soviético 4BO', c: [72, 86, 52], p: 'paint', wear: 0.9, wearColor: [140, 140, 130], cat: 'pintura' },
+  cinzaClaro:  { n: 'Cinza-claro (Zero)', c: [172, 172, 154], p: 'paint', wear: 0.7, wearColor: [190, 190, 186], cat: 'pintura' },
+  rlm76:       { n: 'Azul-claro RLM 76', c: [150, 168, 180], p: 'paint', wear: 0.6, wearColor: [190, 190, 190], cat: 'pintura' },
+  verdeJapao:  { n: 'Verde escuro (Japão)', c: [52, 66, 46], p: 'paint', wear: 0.9, wearColor: [170, 170, 166], cat: 'pintura' },
+  aluminio:    { n: 'Alumínio natural', c: [168, 170, 172], p: 'metal', wear: 0.3, wearColor: [210, 210, 210], cat: 'metal' },
+  lonaVerde:   { n: 'Lona verde-oliva', c: [96, 96, 62], p: 'cloth', wear: 0.3, wearColor: [130, 128, 96], cat: 'tecido' },
+  sacoAreia:   { n: 'Saco de areia (juta)', c: [150, 130, 94], tex: 'burlap', p: 'tex', wear: 0.2, wearColor: [170, 156, 120], cat: 'cenario' },
+  sacoAreiaV:  { n: 'Saco de areia (verde)', c: [104, 104, 72], tex: 'burlap', p: 'tex', wear: 0.2, wearColor: [140, 136, 104], cat: 'cenario' },
+  tijolo:      { n: 'Tijolo', tex: 'brick', p: 'tex', wear: 0.3, wearColor: [170, 140, 120], cat: 'cenario' },
+  reboco:      { n: 'Reboco descascado', tex: 'reboco', p: 'tex', wear: 0.3, wearColor: [190, 180, 170], cat: 'cenario' },
+  concreto:    { n: 'Concreto', tex: 'concrete', p: 'tex', wear: 0.3, wearColor: [180, 178, 170], cat: 'cenario' },
+  tabuas:      { n: 'Tábuas velhas', c: [118, 92, 64], tex: 'planks', p: 'tex', wear: 0.5, wearColor: [160, 136, 104], cat: 'cenario' },
+  tabuasCinza: { n: 'Tábuas gastas (cinza)', c: [120, 112, 100], tex: 'planks', p: 'tex', wear: 0.5, wearColor: [160, 154, 140], cat: 'cenario' },
+  caixaVerde:  { n: 'Caixote pintado (verde)', c: [84, 90, 56], tex: 'planks', p: 'tex', wear: 0.8, wearColor: [140, 112, 78], cat: 'cenario' },
+  palha:       { n: 'Palha / feno', tex: 'straw', p: 'tex', wear: 0, cat: 'cenario' },
+  lama:        { n: 'Terra / lama', tex: 'mud', p: 'tex', wear: 0, cat: 'cenario' },
+  mapa:        { n: 'Mapa de campanha', tex: 'mapa', p: 'tex', wear: 0.2, wearColor: [200, 190, 160], cat: 'cenario' },
+  rafCamo:     { n: 'RAF (verde/terra)', tex: 'rafCamo', p: 'tex', wear: 0.6, wearColor: [170, 170, 166], cat: 'camo' },
+  rlmSplinter: { n: 'Luftwaffe RLM 74/75', tex: 'rlmSplinter', p: 'tex', wear: 0.6, wearColor: [170, 170, 166], cat: 'camo' },
+  hinterhalt:  { n: 'Tanque "Hinterhalt"', tex: 'hinterhalt', p: 'tex', wear: 0.8, wearColor: [140, 138, 130], cat: 'camo' },
+  lozenge:     { n: 'Losangos (1ª Guerra)', tex: 'lozenge', p: 'tex', wear: 0.3, wearColor: [190, 180, 160], cat: 'camo' },
+  linho:       { n: 'Linho envernizado', tex: 'linen', p: 'tex', wear: 0.3, wearColor: [220, 210, 180], cat: 'camo' },
+};
 const CAT_OF = { acoOxidado: 'metal', acoPreto: 'metal', parkCinza: 'metal', parkVerde: 'metal', acoGasto: 'metal', latao: 'metal', cobre: 'metal', nogueira: 'madeira', faia: 'madeira', madeiraClara: 'madeira', baquelite: 'detalhe', polimero: 'detalhe', azulTampa: 'pintura', oliva: 'pintura', feldgrau: 'pintura', dunkelgelb: 'pintura', couro: 'detalhe', lona: 'detalhe', tracer: 'detalhe' };
 Object.entries(CAT_OF).forEach(([k, c]) => MATS[k].cat = c);
+Object.entries(SCENE).forEach(([k, m]) => {
+  if (m.tex && !m.c) { let r = 0, g = 0, b = 0, n = 0; for (let y = 0; y < 96; y += 3) for (let x = 0; x < 96; x += 3) { const c = TEX[m.tex](x * 4, y * 4, m); r += c[0]; g += c[1]; b += c[2]; n++; } m.c = [r / n, g / n, b / n]; }
+  MATS[k] = m; MAT_ORDER.push(k);
+});
 Object.entries(BANK).forEach(([k, m]) => {
   let r = 0, g = 0, b = 0, n = 0;                                     // cor média (miniatura e desgaste)
   for (let y = 0; y < 64; y += 4) for (let x = 0; x < 64; x += 4) { const c = TEX[m.tex](x * 3, y * 3, m); r += c[0]; g += c[1]; b += c[2]; n++; }
@@ -177,7 +275,7 @@ const CLOTH = {
   couroMarrom: ['Couro marrom', [94, 60, 36], 'leather'], frogskinT: ['Frogskin (camuflagem)', [100, 106, 70], 'frogskin'],
 };
 Object.entries(CLOTH).forEach(([k, [n, c, tex]]) => { MATS[k] = { n, c, tex, cat: 'tecido', p: 'tex', wear: tex === 'leather' ? 0.5 : 0.25, wearColor: tex === 'leather' ? [120, 100, 80] : [c[0] * 1.2, c[1] * 1.2, c[2] * 1.15] }; MAT_ORDER.push(k); });
-export const CATS = [['tecido', 'Tecidos'], ['metal', 'Metais'], ['madeira', 'Madeiras'], ['pintura', 'Pinturas'], ['camo', 'Camuflagem'], ['detalhe', 'Detalhes'], ['minhas', 'Minhas']];
+export const CATS = [['tecido', 'Tecidos'], ['cenario', 'Cenário'], ['metal', 'Metais'], ['madeira', 'Madeiras'], ['pintura', 'Pinturas'], ['camo', 'Camuflagem'], ['detalhe', 'Detalhes'], ['minhas', 'Minhas']];
 export function registerImageTexture(key, name, imageData, scale = 1) {
   const d = imageData.data; let r = 0, g = 0, b = 0;
   for (let i = 0; i < d.length; i += 4) { r += d[i]; g += d[i + 1]; b += d[i + 2]; }

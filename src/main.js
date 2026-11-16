@@ -4,6 +4,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import JSZip from 'jszip';
 import { createGame } from './game.js';
 import { ARSENAL, buildPreset, atlasCanvas, FORGE_FAMILIES, FORGE_OPTIONS, forgeDef } from './presets.js';
+import { PROPS, PROP_CATS, propDef } from './props.js';
 import { parseMD3, parseMD2, buildMD3, computeIslands, parseCfg, encodeNormal } from './md3.js';
 import { MATS, MAT_ORDER, fbm, TEX, CATS, registerImageTexture } from './materials.js';
 
@@ -60,7 +61,7 @@ renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.35;
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x18191d);
-const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 2000);
+const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 9000);
 const controls = new OrbitControls(camera, canvas);
 controls.enableDamping = true; controls.dampingFactor = 0.12;
 scene.add(new THREE.HemisphereLight(0xf2eee2, 0x3a382e, 1.6));
@@ -74,6 +75,14 @@ const tagMarker = new THREE.Mesh(new THREE.SphereGeometry(0.6, 16, 12), new THRE
 tagMarker.renderOrder = 10; root.add(tagMarker);
 const pivotMarker = new THREE.Mesh(new THREE.OctahedronGeometry(0.7), new THREE.MeshBasicMaterial({ color: 0x8fd16a, wireframe: true, depthTest: false }));
 pivotMarker.renderOrder = 11; root.add(pivotMarker);
+// referência de escala para mapmodels: soldado de 1,80 m (≈ 90 unidades MD3)
+const refMan = new THREE.Group(); {
+  const m = new THREE.MeshStandardMaterial({ color: 0x8a8f99, transparent: true, opacity: 0.32, roughness: 0.9 });
+  const body = new THREE.Mesh(new THREE.CapsuleGeometry(11, 38, 4, 10), m); body.position.y = 50; refMan.add(body);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(7.5, 12, 10), m); head.position.y = 82; refMan.add(head);
+  [-1, 1].forEach(s => { const leg = new THREE.Mesh(new THREE.CapsuleGeometry(5, 32, 3, 8), m); leg.position.set(s * 5.5, 21, 0); refMan.add(leg); });
+  refMan.visible = false; scene.add(refMan);
+}
 
 function resize() {
   const r = canvas.parentElement.getBoundingClientRect();
@@ -88,6 +97,9 @@ function frameCamera(mode = 'orbit') {
   meshes.forEach(m => { m.geometry.computeBoundingBox(); const b = m.geometry.boundingBox.clone().applyMatrix4(root.matrixWorld); box.union(b); });
   const c = box.getCenter(new THREE.Vector3()), sz = box.getSize(new THREE.Vector3()).length();
   grid.visible = mode !== 'fps';
+  if (S.mode === 'prop') { grid.position.y = 0; grid.scale.setScalar(Math.max(1, sz / 90)); } else { grid.position.y = -25; grid.scale.setScalar(1); }
+  refMan.visible = S.mode === 'prop' && S.showRef !== false;
+  if (refMan.visible) { refMan.position.set(box.max.x + 25, 0, 0); box.expandByObject(refMan); }
   if (mode === 'fps') {           // câmera na posição do olho do jogador (origem do MD3)
     camera.fov = 65; camera.updateProjectionMatrix();
     camera.position.set(0, 0, 0.01); controls.target.set(0, 0, -12);
@@ -113,7 +125,7 @@ async function loadWeapon({ md3Buf, cfgText, skinImages, weaponName, project, sk
   S.originalCfg = cfgText || null; S.skinSources = skinSources || []; S.acOriginal = origin || null; S.preset = null; S.presetM = null; S.rigid = null; S.forge = null;
   S.islandMat = m.surfaces.map(() => new Map()); S.groups = []; S.gi = -1; S.sel = { si: -1, isl: new Set() };
   S.tagOffset = [0, 0, 0]; S.frame = 0; S.modifiedSkins = new Set(); undoStack.length = 0; redoStack.length = 0;
-  S.prims = []; S.animRoot = false; S.decals = []; S.di = -1;
+  S.prims = []; S.animRoot = false; S.decals = []; S.di = -1; S.texK = 1; S.prop = null;
   { // pivô da arma inteira: perto do punho (centro da parte "weapon", um pouco abaixo)
     const ws = m.surfaces.find(x => x.name === 'weapon') || m.surfaces[0], P = ws.pos[0], c = [0, 0, 0];
     for (let i = 0; i < P.length; i += 3) { c[0] += P[i]; c[1] += P[i + 1]; c[2] += P[i + 2]; }
@@ -263,15 +275,15 @@ function composite(si) {
   const ctx = sk.base.getContext('2d');
   const out = ctx.createImageData(w, h), D = out.data;
   const matOf = []; mats.forEach((k, isl) => matOf[isl] = MATS[k]);
-  const C = G.contrast, B = G.bright * 255, muz = model.tagNames.length ? muzzle() : null;
+  const C = G.contrast, B = G.bright * 255, muz = model.tagNames.length ? muzzle() : null, tk = S.texK || 1;
   for (let y = 0, i = 0; y < h; y++) for (let x = 0; x < w; x++, i++) {
     const j = i * 4; let r = O[j], g = O[j + 1], b = O[j + 2];
     const isl = sk.id[i], m = isl >= 0 ? matOf[isl] : null;
     if (m) {
       const L = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
       let k = Math.pow(Math.min(L / sk.mean[isl], 3.2), 0.85); k = 1 + (k - 1) * (G.detail ?? 1);
-      if (m.tex) { const c = TEX[m.tex](x, y, m); k *= 0.95 + 0.1 * sk.fine[i]; r = c[0] * k; g = c[1] * k; b = c[2] * k; }
-      else { k *= patternFactor(m, sk, i, x, y, isl); r = m.c[0] * k; g = m.c[1] * k; b = m.c[2] * k; }
+      if (m.tex) { const c = TEX[m.tex](x * tk, y * tk, m); k *= 0.95 + 0.1 * sk.fine[i]; r = c[0] * k; g = c[1] * k; b = c[2] * k; }
+      else { k *= patternFactor(m, sk, i, x * tk, y * tk, isl); r = m.c[0] * k; g = m.c[1] * k; b = m.c[2] * k; }
       if (G.wear > 0 && m.wear) {                       // bordas gastas mostrando metal claro / madeira gasta
         const bd = sk.border[i];
         if (bd < 4) {
@@ -1136,7 +1148,7 @@ function presetAnim(def) {
     const side = /sten|mp18/.test(id), drum = /thompson|ppsh/.test(id);
     return { clips: [1, 8, 44], steps: [['recoil', { kick: 1.6, rise: 4, side: 0.8 }], ['bolt', { dist: 2.5 }], ['trigger', { quiet: true }], ['shell', {}], ['tracer', {}], ['reload', { tilt: side ? 12 : 22, dropAxis: side ? '-x' : '-z', drop: side ? 12 : drum ? 12 : 16, spin: drum ? 90 : 0 }]], n: 'recuo, ferrolho, cápsula, traçante e recarga' };
   }
-  if (slot === 'assault') return { clips: [1, 8, 48], steps: [['recoil', { kick: id === 'bar1918' ? 3 : 2.2, rise: 6, side: 1 }], ['bolt', { dist: 3 }], ['trigger', { quiet: true }], ['shell', {}], ['tracer', {}], ['reload', { tilt: id === 'fg42' ? 12 : 26, dropAxis: id === 'fg42' ? '-x' : '-z' }]], n: 'recuo, ferrolho, cápsula, traçante e recarga' };
+  if (slot === 'assault') return { clips: [1, 8, 48], steps: [['recoil', { kick: /bar1918|mg42|lewis|chauchat/.test(id) ? 3 : 2.2, rise: id === 'mg42' ? 4 : 6, side: id === 'mg42' ? 1.6 : 1 }], ['bolt', { dist: 3 }], ['trigger', { quiet: true }], ['shell', {}], ['tracer', {}], ['reload', { tilt: id === 'fg42' ? 12 : id === 'lewis' ? 10 : 26, dropAxis: id === 'fg42' ? '-x' : '-z', spin: id === 'lewis' ? 90 : 0 }]], n: 'recuo, ferrolho, cápsula, traçante e recarga' };
   if (slot === 'sniper') return { clips: [1, 30, 48], steps: [['recoil', { kick: 4, rise: 12, side: 0.5, snap: 0.2 }], ['boltAction', {}], ['trigger', { quiet: true }], ['shell', { at: 0.5 }], id === 'enfield4' ? ['reload', { tilt: 18, boltPull: 0 }] : ['stripper']], n: 'ferrolho manual, cápsula e ' + (id === 'enfield4' ? 'carregador' : 'pente de lâminas') };
   if (slot === 'carbine') {
     if (id === 'smle') return { clips: [1, 30, 48], steps: [['recoil', { kick: 3.5, rise: 11, snap: 0.2 }], ['boltAction', { lift: 55, pull: 4 }], ['trigger', { quiet: true }], ['shell', { at: 0.5 }], ['stripper']], n: 'ferrolho manual e pente de lâminas' };
@@ -1269,6 +1281,11 @@ function skinPath(si) {
 // arquivos que a arma modificada ocupa no jogo
 async function packageFiles() {
   if (S.mode === 'char') return [{ path: charTarget(), data: await skinBlob(0) }, { path: 'packages/models/playermodels/custom/CUBEMAKER_LEIA-ME.txt', data: new Blob([charCredits()]) }];
+  if (S.mode === 'prop') {
+    const d = `packages/models/mapmodels/${mapmodelPath()}/`;
+    return [{ path: d + 'tris.md3', data: new Blob([exportMD3()]) }, { path: d + 'md3.cfg', data: new Blob([S.cfg]) }, { path: d + 'skin.jpg', data: await skinBlob(0, 'image/jpeg') },
+      { path: d + 'CREDITOS.txt', data: new Blob([`${S.prop.n} — mapmodel criado no CUBE MAKER v${VERSION} (cubemaker.kayquedeleon.app)\n\nModelo e textura gerados proceduralmente no CUBE MAKER (obra original, livre para usar nos seus mapas).\n\nPara usar num mapa, acrescente ao .cfg do mapa (packages/maps/<mapa>.cfg):\n${mapmodelLine()}\n\nNo editor do AssaultCube, coloque com /newent mapmodel <número da linha>.\n`]) }];
+  }
   const dir = `packages/models/weapons/${weaponDir()}/`;
   const out = [{ path: dir + 'tris_high.md3', data: new Blob([exportMD3()]) }, { path: dir + 'md3.cfg', data: new Blob([S.cfg]) }];
   for (let si = 0; si < skins.length; si++) {
@@ -1284,6 +1301,7 @@ async function originalFiles() {
     const rel = charTarget().replace('packages/models/playermodels/', ''), f = charFiles && charFiles.get(rel);
     return f ? [{ path: charTarget(), data: f }] : [];
   }
+  if (S.mode === 'prop') return [];                          // mapmodel novo: não substitui nada do jogo
   if (S.acOriginal && S.acOriginal.files) return S.acOriginal.files;
   if (S.preset && SLOTS[S.weapon]) {                       // projeto reaberto de um modelo do arsenal: busca os originais do slot
     try {
@@ -1302,6 +1320,10 @@ async function exportZip() {
   const zip = new JSZip(), w = weaponDir();
   for (const f of await packageFiles()) zip.file(f.path, f.data);
   if (S.mode === 'char') { const blob = await zip.generateAsync({ type: 'blob' }); download('cubemaker_personagem.zip', blob); toast('Pacote .zip exportado', 'ok'); return; }
+  if (S.mode === 'prop') {
+    zip.file('LEIA-ME_CUBEMAKER.txt', `Como instalar o mapmodel "${S.prop.n}":\n1) Extraia este zip na pasta home do AssaultCube (Documentos\\My Games\\AssaultCube\\v1.3\\)\n   ou na pasta de instalação.\n2) No .cfg do seu mapa (packages/maps/<mapa>.cfg), acrescente no fim:\n   ${mapmodelLine()}\n3) No editor do jogo, mire no chão e use /newent mapmodel <número dessa linha, contando do 0>.\n`);
+    download(`cubemaker_mapmodel_${S.prop.id}.zip`, await zip.generateAsync({ type: 'blob' })); toast('Pacote .zip do mapmodel exportado', 'ok'); return;
+  }
   zip.file('LEIA-ME_CUBEMAKER.txt',
     `Como instalar:\n1) Extraia este zip dentro da pasta home do AssaultCube:\n   Documentos\\My Games\\AssaultCube\\v1.3\\\n` +
     `   (ou direto na pasta de instalação, fazendo backup antes)\n2) Abra o jogo — a arma "${w}" será substituída.\n\n${credits()}`);
@@ -1392,7 +1414,8 @@ async function installToGame() {
     if (log.backup.length) log.pastaBackup = `${BACKUP}/${stamp}`;
     await appendLog(log);
     $('#gameLast').textContent = `Última instalação: ${weaponDir()} · ${stamp.replace('_', ' ')}`;
-    toast(`✔ ${weaponDir()} instalada (${files.length} arquivos). Backup em ${BACKUP}. Reinicie o mapa no jogo.`, 'ok');
+    if (S.mode === 'prop') toast(`✔ Mapmodel instalado em packages/models/mapmodels/${mapmodelPath()}. Agora acrescente a linha ao .cfg do mapa.`, 'ok');
+    else toast(`✔ ${weaponDir()} instalada (${files.length} arquivos). Backup em ${BACKUP}. Reinicie o mapa no jogo.`, 'ok');
   } catch (e) {
     toast('Falha ao instalar: ' + e.message + (gameDirKind === 'instalação' ? ' — a pasta de instalação pode exigir administrador; use Documentos\\My Games\\AssaultCube\\v1.3' : ''), 'err');
   } finally { btn.disabled = false; btn.textContent = 'Instalar no jogo'; }
@@ -1438,7 +1461,7 @@ async function saveProject() {
     md3: bufToB64(S.originalMD3),
     skins: skins.map((sk, i) => ({ file: S.skinFiles[i], orig: sk.orig.toDataURL('image/png'), overlay: sk.overlay.toDataURL('image/png') })),
     islandMat: S.islandMat.map(m => [...m]), groups: S.groups.map(g => ({ ...g, isl: [...g.isl] })),
-    global: S.global, tagOffset: S.tagOffset, modified: [...S.modifiedSkins], root: S.root, prims: S.prims, fx: S.fx, decals: S.decals, preset: S.preset, presetM: S.presetM, rigid: S.rigid, forge: S.forge, forgeName: S.forgeName
+    global: S.global, tagOffset: S.tagOffset, modified: [...S.modifiedSkins], root: S.root, prims: S.prims, fx: S.fx, decals: S.decals, preset: S.preset, presetM: S.presetM, rigid: S.rigid, forge: S.forge, forgeName: S.forgeName, texK: S.texK, prop: S.prop
   };
   download(`${S.weapon}.cubemaker`, new Blob([JSON.stringify(proj)], { type: 'application/json' }));
   toast('Projeto salvo', 'ok');
@@ -1460,7 +1483,8 @@ function applyProject(p) {
   if (p.root) S.root = p.root;
   if (p.forge) { S.forge = p.forge; S.forgeName = p.forgeName; }
   if (p.preset) S.preset = p.preset; if (p.presetM) S.presetM = p.presetM; if (p.rigid) S.rigid = p.rigid;
-  if (p.fx) S.fx = { ...S.fx, ...p.fx }; S.decals = p.decals || [];
+  if (p.fx) S.fx = { ...S.fx, ...p.fx }; S.decals = p.decals || []; if (p.texK) S.texK = p.texK;
+  if (p.prop) { S.prop = p.prop; S.mode = 'prop'; document.body.dataset.mode = 'prop'; }
   S.modifiedSkins = new Set(p.modified || []);
   p.skins.forEach((s, i) => { if (s.file) S.skinFiles[i] = s.file; });
   skins.forEach((sk, i) => { if (p.overlays[i]) sk.overlay.getContext('2d').drawImage(p.overlays[i], 0, 0); composite(i); });
@@ -1709,10 +1733,11 @@ async function loadPreset(id) {
       S.groups.push({ name: 'Mão', si: hi, isl, pivot: ctr.map(x => +x.toFixed(2)), t: sp.map((x, q) => +(x - ctr[q]).toFixed(2)), r: Z3(), s: [1, 1, 1], hidden: false, keys: {}, parent: par, rig: true });
     }
     S.gi = S.groups.length ? 0 : -1;
-    Object.assign(S.global, { wear: 0.4, age: 0.25, dirt: 0.25 }); S.fx = { ...S.fx, cavity: 0.4, scratches: 0, rust: 0, dust: 0, burn: 0, blood: 0, ...(def.fx || {}) };
+    Object.assign(S.global, { wear: def.hd ? 0.14 : 0.4, age: 0.25, dirt: 0.25 }); S.fx = { ...S.fx, cavity: 0.4, scratches: 0, rust: 0, dust: 0, burn: 0, blood: 0, ...(def.fx || {}) };
     if (def.fx && def.fx.dirt != null) S.global.dirt = def.fx.dirt;
     S.preset = { id: def.id, n: def.n, war: def.war, c: def.c }; S.presetM = M0.toArray(); S.forge = def.forge ? JSON.parse(JSON.stringify(def.forge)) : null; S.forgeName = def.forge ? def.n : '';
     S.rigid = frames.some(F => !F.equals(new THREE.Matrix4())) ? frames.map(F => F.toArray()) : null;
+    S.texK = clamp(1.2 / Bp.density, 0.4, 2.5);
     applyPresetAnim(def, true);
     model.surfaces.forEach((_, i) => S.modifiedSkins.add(i));
     skins.forEach((_, i) => composite(i));
@@ -1723,6 +1748,132 @@ async function loadPreset(id) {
     toast(location.protocol === 'file:' ? 'Abra pelo site (cubemaker.kayquedeleon.app) para usar o arsenal' : 'Falha ao montar o modelo: ' + e.message, 'err');
   }
 }
+// ================================================================ MAPMODELS (cenário, veículos, aviões…)
+const MM_K = 0.05;                                   // mm → unidades MD3 (≈ 50 por metro, calibrado com os mapmodels do AC)
+const propVars = (def, v = {}) => Object.fromEntries(Object.entries(def.vars || {}).map(([k, o]) => [k, v[k] ?? o.v]));
+async function loadProp(id, vars, keepCam) {
+  const def = typeof id === 'string' ? propDef(id) : id; if (!def) return;
+  const v = propVars(def, vars);
+  try {
+    const Bp = buildPreset({ build: () => def.build(v) }, { W: 1024, H: 1024, ground: true });
+    const nv = Bp.pos.length / 3, mn = [1e9, 1e9, 1e9], mx = [-1e9, -1e9, -1e9];
+    for (let i = 0; i < nv; i++) for (let k = 0; k < 3; k++) { mn[k] = Math.min(mn[k], Bp.pos[i * 3 + k]); mx[k] = Math.max(mx[k], Bp.pos[i * 3 + k]); }
+    const off = [-(mn[0] + mx[0]) / 2, -(mn[1] + mx[1]) / 2, -mn[2]];
+    let k = MM_K; const ext = Math.max(...[0, 1].map(q => (mx[q] - mn[q]) / 2), mx[2] - mn[2]) * k;
+    let scalePct = 100; if (ext > 500) { scalePct = Math.ceil(ext / 500 * 100); k = k * 100 / scalePct; }   // MD3 só guarda até ±512
+    const P = new Float32Array(nv * 3), N = new Float32Array(Bp.nrm), NR = new Uint16Array(nv);
+    let rad = 0;
+    for (let i = 0; i < nv; i++) {
+      for (let q = 0; q < 3; q++) P[i * 3 + q] = (Bp.pos[i * 3 + q] + off[q]) * k;
+      NR[i] = encodeNormal(N[i * 3], N[i * 3 + 1], N[i * 3 + 2]); rad = Math.max(rad, Math.hypot(P[i * 3], P[i * 3 + 1], P[i * 3 + 2]));
+    }
+    const surf = { name: 'mapmodel', flags: 0, nv, ntri: Bp.tris.length / 3, shaders: [{ name: 'skin.jpg', index: 0 }], tris: new Int32Array(Bp.tris), st: new Float32Array(Bp.uv), pos: [P], nrm: [N], nraw: [NR] };
+    const m0 = { version: 15, name: 'cubemaker_' + def.id, flags: 0, nf: 1, frames: [{ min: [0, 0, 0], max: [0, 0, 0], origin: [0, 0, 0], radius: rad, name: 'frame0' }], tagNames: [], tags: [[]], surfaces: [surf] };
+    const buf = buildMD3(m0, { surfaces: [{ tris: surf.tris, pos: surf.pos, nrm: surf.nrm, nraw: surf.nraw }], tags: [[]] });
+    const dm = [(mx[0] - mn[0]) / 1000, (mx[1] - mn[1]) / 1000, (mx[2] - mn[2]) / 1000];
+    const mmLine = def.mm || `${Math.max(0, Math.round(Math.max(dm[0], dm[1]) / 0.6))} ${Math.max(1, Math.round(dm[2] / 0.3))} 0 0`;
+    const cfg = propCfg(def, scalePct, mmLine);
+    await loadWeapon({ md3Buf: buf, cfgText: cfg, skinImages: [atlasCanvas(Bp)], weaponName: 'mapmodel_' + def.id, origin: { files: [] } });
+    S.mode = 'prop'; document.body.dataset.mode = 'prop';
+    S.prop = { id: def.id, n: def.n, cat: def.cat, war: def.war, vars: v, mm: mmLine, dims: dm.map(x => +x.toFixed(2)), scale: scalePct };
+    S.texK = clamp(0.5 / Bp.density, 0.3, 12);
+    S.root = { name: 'Modelo inteiro', pivot: [0, 0, 0], keys: {} };
+    // materiais por peça e grupos animáveis
+    const s = model.surfaces[0], partOfIsl = s.islVerts.map(vs => Bp.vpart[vs[0]]);
+    S.islandMat[0] = new Map(partOfIsl.map((p, i) => [i, Bp.parts[p].mat]));
+    S.groups = [];
+    const gmap = new Map();
+    partOfIsl.forEach((p, i) => { const g = Bp.parts[p].g; if (!g) return; if (!gmap.has(g)) gmap.set(g, new Set()); gmap.get(g).add(i); });
+    gmap.forEach((isl, name) => {
+      const c = [0, 0, 0]; let n = 0, maxY = -1e9; const verts = [];
+      isl.forEach(i => s.islVerts[i].forEach(vv => { verts.push(vv); for (let q = 0; q < 3; q++) c[q] += s.pos[0][vv * 3 + q]; n++; maxY = Math.max(maxY, s.pos[0][vv * 3 + 1]); }));
+      const pivot = c.map(x => x / n); if (def.anim && def.anim.pivot === 'maxY') pivot[1] = maxY;
+      S.groups.push({ name, si: 0, isl, pivot: pivot.map(x => +x.toFixed(2)), t: Z3(), r: Z3(), s: [1, 1, 1], hidden: false, keys: {}, parent: -1, rig: true });
+    });
+    if (def.anim && def.anim.chain) S.groups.forEach((g, i) => { if (i > 0) g.parent = i - 1; });
+    applyPropAnim(def);
+    S.gi = S.groups.length ? 0 : -1;
+    Object.assign(S.global, { wear: 0.35, age: 0.2, dirt: 0.3 });
+    S.fx = { ...S.fx, cavity: 0.35, scratches: 0.15, rust: 0, dust: 0.15, burn: 0, blood: 0, ...(def.fx || {}) };
+    if (def.fx && def.fx.dirt != null) S.global.dirt = def.fx.dirt;
+    S.modifiedSkins.add(0); composite(0);
+    updateAll(); if (!keepCam) frameCamera('orbit'); goStep(2); updatePropUI();
+    toast(`${def.n} · ${dm[0].toFixed(1)} × ${dm[1].toFixed(1)} × ${dm[2].toFixed(1)} m · ${surf.ntri} triângulos`, 'ok');
+  } catch (e) { console.error(e); toast('Falha ao montar o mapmodel: ' + e.message, 'err'); }
+}
+function propCfg(def, scalePct, mmLine, nAnim = 0, fps = 0) {
+  return [`// ${def.n} — mapmodel feito no CUBE MAKER`, 'md3load tris.md3', 'md3skin mapmodel skin.jpg', ...(nAnim > 1 ? [`md3anim "mapmodel" 0 ${nAnim} ${fps}`] : []),
+    ...(scalePct !== 100 ? [`mdlscale ${scalePct}`] : []), `mdlshadowdist 12`,
+    `mdlattribute keywords "${{ fort: 'military', veic: 'military', aviao: 'military', art: 'military', obj: 'military', cen: 'rural', sold: 'military' }[def.cat] || 'military'}"`,
+    `mdlattribute desc "${def.n.replace(/"/g, '')}"`, 'mdlattribute author cubemaker', 'mdlattribute distribution custom', `mdlattribute defaults "${mmLine}"`, ''].join('\n');
+}
+function applyPropAnim(def) {
+  const A = def.anim;
+  if (!A) { setFrameCount(1, true); return; }
+  setFrameCount(A.n, true);
+  Object.entries(A.groups).forEach(([name, fn]) => {
+    const g = S.groups.find(x => x.name === name); if (!g) return; g.keys = {};
+    for (let f = 0; f < A.n; f++) { const k = fn(f); setKey(g, f, { t: k.t, r: k.r, e: k.e || 'linear' }); }
+  });
+  S.cfg = S.cfg.split('\n').filter(l => !/^\s*md3anim/i.test(l)).join('\n').replace('md3skin mapmodel skin.jpg', `md3skin mapmodel skin.jpg\nmd3anim "mapmodel" 0 ${A.n} ${A.fps}`);
+  $('#cfgText').value = S.cfg; S.fps = A.fps; $('#fps').value = A.fps;
+}
+const mapmodelPath = () => `cubemaker/${S.prop ? S.prop.id : 'modelo'}`;
+const mapmodelLine = () => `mapmodel ${S.prop ? S.prop.mm : '1 3 0 0'} "${mapmodelPath()}"`;
+function updatePropUI() {
+  const box = $('#propBox'); if (!box) return;
+  const on = S.mode === 'prop' && S.prop; box.style.display = on ? '' : 'none'; if (!on) return;
+  const def = propDef(S.prop.id);
+  $('#propTitle').textContent = def.n; $('#propDesc').textContent = def.d;
+  const ctl = $('#propCtl'); ctl.innerHTML = '';
+  Object.entries(def.vars || {}).forEach(([key, o]) => {
+    const row = document.createElement('div'); row.className = 'field row';
+    row.innerHTML = `<label style="width:90px">${o.n}</label><select>${o.o.map(([val, n]) => `<option value="${val}">${n}</option>`).join('')}</select>`;
+    const se = row.querySelector('select'); se.value = S.prop.vars[key]; se.onchange = () => loadProp(def.id, { ...S.prop.vars, [key]: se.value }, true);
+    ctl.appendChild(row);
+  });
+  const d = S.prop.dims;
+  $('#propInfo').innerHTML = `${d[0]} × ${d[1]} × ${d[2]} m <small>(largura × comprimento × altura)</small><br>${model.surfaces[0].ntri} triângulos · ${model.nf > 1 ? model.nf + ' quadros animados' : 'estático'}${S.prop.scale !== 100 ? ` · mdlscale ${S.prop.scale}` : ''}`;
+  $$('.mmline').forEach(e => e.textContent = mapmodelLine());
+  $$('.mmpath').forEach(e => e.textContent = `packages/models/mapmodels/${mapmodelPath()}/`);
+}
+function buildPropUI() {
+  const box = $('#propGrid'); if (!box) return;
+  const tabs = $('#propTabs'); tabs.innerHTML = '';
+  const cats = Object.keys(PROP_CATS);
+  if (!S.propCat) S.propCat = 'all';
+  const tab = (k, label) => { const b = document.createElement('button'); b.textContent = label; b.className = k === S.propCat ? 'on' : ''; b.onclick = () => { S.propCat = k; buildPropUI(); }; tabs.appendChild(b); };
+  tab('all', `Todos (${PROPS.length})`);
+  cats.forEach(k => tab(k, `${PROP_CATS[k]} (${PROPS.filter(p => p.cat === k).length})`));
+  box.innerHTML = '';
+  (S.propCat === 'all' ? cats : [S.propCat]).forEach(k => {
+    const list = PROPS.filter(p => p.cat === k); if (!list.length) return;
+    if (S.propCat === 'all') { const h = document.createElement('h3'); h.className = 'arscat'; h.textContent = `${PROP_CATS[k]} · ${list.length}`; box.appendChild(h); }
+    list.forEach(p => {
+      const b = document.createElement('button'); b.className = 'wcard';
+      b.innerHTML = `<div class="th" style="background-image:url(props/${p.id}.png)"></div><span class="tag war${p.war || 2}">${p.war === 1 ? '1ª GUERRA' : p.war === 2 ? '2ª GUERRA' : '1ª E 2ª GUERRA'}</span><div class="bd"><b>${p.n}</b><small>mapmodel${p.anim ? ' · animado' : ''}${p.vars ? ' · variações' : ''}</small><p>${p.d}</p></div>`;
+      b.onclick = () => loadProp(p.id); box.appendChild(b);
+    });
+  });
+}
+// acrescenta a linha do mapmodel ao .cfg de um mapa (com backup)
+async function addPropToMap() {
+  if (S.mode !== 'prop') return;
+  const map = ($('#mapName').value || '').trim().replace(/\.cfg$|\.cgz$/i, ''); if (!map) return toast('Digite o nome do mapa (ex.: ac_desert)', 'warn');
+  if (!(await ensurePerm())) return;
+  const path = `packages/maps/${map}.cfg`, f = await readAt(path);
+  if (!f) return toast(`Não achei ${path} na pasta conectada. Copie o .cfg do mapa para lá (ou conecte a pasta de instalação) e tente de novo.`, 'warn');
+  let txt = await f.text(); const line = mapmodelLine();
+  if (txt.includes(`"${mapmodelPath()}"`)) return toast('Esse mapmodel já está no .cfg do mapa', 'warn');
+  const n = (txt.match(/^\s*mapmodel\s/gm) || []).length, stamp = stampNow();
+  await writeAt(`${BACKUP}/${stamp}/${path}`, f);
+  txt = txt.replace(/\s*$/, '\n') + `${line}\t\t// ${n} — CUBE MAKER\n`;
+  await writeAt(path, new Blob([txt]));
+  await appendLog({ acao: 'mapa', quando: new Date().toISOString(), mapa: path, linha: line, indice: n, backup: `${BACKUP}/${stamp}/${path}` });
+  toast(`Adicionado ao ${map}.cfg como mapmodel nº ${n}. No editor do AC: /newent mapmodel ${n}`, 'ok');
+  $('#mapIdx').textContent = `nº ${n} em ${map}.cfg · no editor: /newent mapmodel ${n}`;
+}
+
 // ---- Forja (UI)
 let forgeT = 0;
 function startForge(fam) { const F = FORGE_FAMILIES[fam]; return loadPreset(forgeDef(fam, { ...F.p }, 'Minha ' + F.n.toLowerCase())); }
@@ -1762,7 +1913,7 @@ function buildArsenalUI() {
   box.innerHTML = '';
   const card = a => {
     const b = document.createElement('button'); b.className = 'wcard';
-    b.innerHTML = `<div class="th" style="background-image:url(presets/${a.id}.png)"></div><span class="tag war${a.war}">${a.war === 1 ? '1ª GUERRA' : '2ª GUERRA'}</span><div class="bd"><b>${a.n}</b><small>${a.c} · substitui ${a.slot}</small><p>${a.d}</p></div>`;
+    b.innerHTML = `<div class="th" style="background-image:url(presets/${a.id}.png)"></div><span class="tag war${a.war}">${a.war === 1 ? '1ª GUERRA' : '2ª GUERRA'}</span>${a.novo ? '<span class="tag novo">NOVO</span>' : ''}<div class="bd"><b>${a.n}</b><small>${a.c} · substitui ${a.slot}${a.hd ? ' · alta fidelidade' : ''}</small><p>${a.d}</p></div>`;
     b.onclick = () => loadPreset(a.id); return b;
   };
   (S.arsSlot === 'all' ? slots : [S.arsSlot]).forEach(k => {
@@ -2342,6 +2493,10 @@ function bindUI() {
     toast(`Peça criada: grupo "${S.groups[r.gi].name}". Ajuste com Mover/Girar/Escala.`, 'ok');
   });
   $('#btnRig').onclick = () => applyRig();
+  $('#btnAddMap').onclick = () => addPropToMap().catch(err => toast(err.message, 'err'));
+  $$('.btnCopyMM').forEach(b => b.onclick = () => { navigator.clipboard && navigator.clipboard.writeText(mapmodelLine()); toast('Linha copiada: ' + mapmodelLine(), 'ok'); });
+  $('#refToggle').onchange = e => { S.showRef = e.target.checked; refMan.visible = S.mode === 'prop' && S.showRef; };
+  $('#btnPropReset').onclick = () => S.prop && loadProp(S.prop.id, S.prop.vars, true);
   $('#forgeName').onchange = () => { S.forgeName = $('#forgeName').value; if (S.preset) S.preset.n = S.forgeName; };
   $('#openChar').onchange = e => openCharacterFolder(e.target.files).catch(err => toast(err.message, 'err'));
   $$('[data-ins]').forEach(b => b.onclick = () => addInsignia(b.dataset.ins));
@@ -2437,7 +2592,7 @@ function loop(now) {
   requestAnimationFrame(loop);
 }
 
-buildStaticUI(); buildArsenalUI(); bindUI(); setTool('nav'); resize(); initGameDir(); defaultHands();
+buildStaticUI(); buildArsenalUI(); buildPropUI(); bindUI(); setTool('nav'); resize(); initGameDir(); defaultHands();
 loadCustomTextures().then(() => buildMatGrid());
 camera.position.set(40, 25, 40); controls.target.set(0, 0, -10);
 requestAnimationFrame(loop);
@@ -2452,16 +2607,22 @@ function thumbnail(w = 480, h = 300, hideHands = false) {
   const box = new THREE.Box3(); meshes.forEach(m => { if (!m.visible) return; m.geometry.computeBoundingBox(); box.union(m.geometry.boundingBox.clone().applyMatrix4(root.matrixWorld)); });
   const c = box.getCenter(new THREE.Vector3()), dim = box.getSize(new THREE.Vector3());
   const tv2 = Math.tan(15 * D2R), th2 = tv2 * camera.aspect;
-  const dist = Math.max(Math.max(dim.z, dim.x) / 2 / th2, dim.y / 2 / tv2) * 1.12 + Math.min(dim.x, dim.z) / 2;
-  camera.position.copy(c).add(new THREE.Vector3(1, 0.18, 0.22).normalize().multiplyScalar(dist)); camera.lookAt(c);
+  const rv = refMan.visible; refMan.visible = false;
+  if (S.mode === 'prop') {                            // mapmodel: vista 3/4 de cima, enquadrada pela esfera
+    const r = dim.length() / 2, dist = r / Math.sin(Math.min(15, Math.atan(th2) / D2R) * D2R) * (dim.length() > 300 ? 0.72 : 0.9);
+    camera.position.copy(c).add(new THREE.Vector3(0.95, 0.62, 0.8).normalize().multiplyScalar(dist)); camera.lookAt(c);
+  } else {
+    const dist = Math.max(Math.max(dim.z, dim.x) / 2 / th2, dim.y / 2 / tv2) * 1.12 + Math.min(dim.x, dim.z) / 2;
+    camera.position.copy(c).add(new THREE.Vector3(1, 0.18, 0.22).normalize().multiplyScalar(dist)); camera.lookAt(c);
+  }
   renderer.render(scene, camera);
   const out = document.createElement('canvas'); out.width = w; out.height = h; out.getContext('2d').drawImage(renderer.domElement, 0, 0);
   renderer.setPixelRatio(pr); camera.fov = fov; resize();
   scene.background = bg; grid.visible = gv; tagMarker.visible = tv; pivotMarker.visible = pv; renderer.toneMappingExposure = ex;
-  meshes.forEach(m => m.visible = true); updateColors(); camera.position.copy(saved.p); controls.target.copy(saved.t); controls.update();
+  meshes.forEach(m => m.visible = true); refMan.visible = rv; updateColors(); camera.position.copy(saved.p); controls.target.copy(saved.t); controls.update();
   return out.toDataURL('image/png');
 }
-window.CM = { startForge, forgeDef, loadCharacter, applyUniform, addInsignia, UNIFORMS, charTarget, loadPreset, ARSENAL, _i: { THREE, get meshes() { return meshes; }, camera, renderer, scene, root, grid, tagMarker, pivotMarker, controls, resize }, debugBox: () => meshes.map(m => { m.geometry.computeBoundingBox(); const b = m.geometry.boundingBox; return [m.visible, b.min.toArray().map(v => +v.toFixed(1)), b.max.toArray().map(v => +v.toFixed(1)), m.geometry.index.count, m.geometry.attributes.position.array.slice(0, 3).join(',')]; }), thumbnail, S, get model() { return model; }, get skins() { return skins; }, loadBundled, loadDemo, exportMD3, createGroup, selectIsland, assignMaterial, applyPreset, applyAnimBank, runGen, setFrame, frameCamera, setTool, parseMD3, undo, captureState, goStep, game, placeDecal, addPrimitive, assembleClips, interpKey };
+window.CM = { loadProp, PROPS, addPropToMap, packageFiles, startForge, forgeDef, loadCharacter, applyUniform, addInsignia, UNIFORMS, charTarget, loadPreset, ARSENAL, _i: { THREE, get meshes() { return meshes; }, camera, renderer, scene, root, grid, tagMarker, pivotMarker, controls, resize }, debugBox: () => meshes.map(m => { m.geometry.computeBoundingBox(); const b = m.geometry.boundingBox; return [m.visible, b.min.toArray().map(v => +v.toFixed(1)), b.max.toArray().map(v => +v.toFixed(1)), m.geometry.index.count, m.geometry.attributes.position.array.slice(0, 3).join(',')]; }), thumbnail, S, get model() { return model; }, get skins() { return skins; }, loadBundled, loadDemo, exportMD3, createGroup, selectIsland, assignMaterial, applyPreset, applyAnimBank, runGen, setFrame, frameCamera, setTool, parseMD3, undo, captureState, goStep, game, placeDecal, addPrimitive, assembleClips, interpKey };
 {
   const h = location.hash.slice(1);
   if (h === 'demo') loadBundled('subgun'); else if (WEAPONS[h]) loadBundled(h);

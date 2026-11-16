@@ -23,8 +23,13 @@ O trabalho segue um **pipeline em 5 etapas**, para armas e para personagens.
    - Controles para época (1ª/2ª Guerra ou moderna), cano, corpo, coronha, carregador, empunhadura, punho frontal, mira (ferro, luneta, ponto vermelho), boca (freio, supressor, compensador), camisa perfurada, bipé, baioneta, lado da alavanca, metal e madeira.
    - A arma é refeita na hora, já com textura, grupos e animação de fábrica.
 
+0b. **Mapmodels da 1ª e 2ª Guerra** (cenário para os seus mapas)
+   - 50 modelos em 7 categorias: fortificações (sacos de areia, arame farpado em sanfona, cavalo de frisa, ouriço tcheco, dentes de dragão, parede de trincheira, estrado, casamata, torre de vigia), veículos e tanques (Jeep Willys, Kübelwagen, BMW R75 com sidecar, Opel Blitz, Sherman, Tiger I, T-34/85, Panzer IV destruído), aviões (Spitfire, Bf 109, P-51D, Zero, Stuka, Fokker Dr.I, Sopwith Camel e um caça abatido), artilharia (Flak 88, PaK 40, canhão de 75 de 1897, morteiro, MG 42 no tripé, Vickers, holofote), objetos (caixotes, latas, tambores, galão, rádio, capacetes no chão, túmulo de campanha, cruz, maca, mesa com mapa, lampião, máscara de gás, estojos de artilharia, bicicleta), cenário (muro em ruínas, postes, feno, carroça, barraca, cerca, árvore estilhaçada, toco, placa, bandeira) e soldados caídos (5 poses × 13 uniformes, e corpo coberto).
+   - Variações (pintura, uniforme, pose), hélices/holofotes/bandeira animados (`md3anim "mapmodel"`), texturas com oclusão de ambiente e soldado de 1,80 m na tela como referência de escala (≈ 50 unidades MD3 por metro, calibrado com os mapmodels do próprio AC).
+   - Instala em `packages/models/mapmodels/cubemaker/<modelo>/` (nada do jogo é substituído) e pode acrescentar a linha `mapmodel …` ao `.cfg` do mapa, com backup.
+
 1. **Arma**
-   - **Arsenal da 1ª e 2ª Guerra**: 39 modelos prontos, com textura e grupos de animação, que entram no lugar da arma do AC.
+   - **Arsenal da 1ª e 2ª Guerra**: 49 modelos prontos, com textura e grupos de animação, que entram no lugar da arma do AC. A maioria foi refeita em alta fidelidade (chanfros, parafusos, guarda-mato vazado, miras com túnel, lunetas com torres, coronhas com pistol grip) e entraram MG 42, Lewis, Chauchat, M3 "Grease Gun", PPS-43, Beretta 38, Arisaka Tipo 99, Lebel 1886, Tokarev TT-33 e Browning Hi-Power.
    - Cada modelo já abre com a **animação de fábrica** dele:
      - granadas: pino, tampa ou cordão sendo tirado e a alavanca voando no arremesso
      - armas de fogo: impacto/recuo com mola, cápsula ejetada e traçante, mais o mecanismo de cada uma (articulação da Luger, cão e tambor do revólver, slide, ferrolho, ferrolho manual, pump)

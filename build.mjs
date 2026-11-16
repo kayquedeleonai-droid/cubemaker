@@ -10,4 +10,5 @@ fs.mkdirSync('dist', { recursive: true });
 fs.writeFileSync('dist/index.html', html);
 fs.cpSync('assets/weapons', 'dist/weapons', { recursive: true });
 if (fs.existsSync('assets/presets')) fs.cpSync('assets/presets', 'dist/presets', { recursive: true });
+if (fs.existsSync('assets/props')) fs.cpSync('assets/props', 'dist/props', { recursive: true });
 console.log('dist/index.html', (html.length / 1024).toFixed(0) + ' KB · weapons/ copiado');
