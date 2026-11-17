@@ -204,7 +204,7 @@ export function createGame(ctx) {
     if (st.melee) { sfx.swish(); playClip(/shoot/i, () => { G.clip = null; }); setTimeout(() => meleeHit(), st.delay * 0.4); return; }
     const hitList = () => [...solids, ...botMeshes()];
     G.ammo--; G.shots++;
-    sfx.shot(st.pellets > 1 ? 1.6 : st.kick > 3 ? 1.4 : 1);
+    if (window.__cmShot) window.__cmShot(); else sfx.shot(st.pellets > 1 ? 1.6 : st.kick > 3 ? 1.4 : 1);
     G.kick = Math.min(1.6, G.kick + st.kick * 0.35); G.camKick += st.kick * 0.012;
     playClip(/shoot/i, () => { G.clip = null; });
     // clarão
@@ -234,7 +234,7 @@ export function createGame(ctx) {
   function reload() {
     const st = G.stats;
     if (G.reloading || st.melee || st.grenade || G.ammo >= st.mag || G.spare <= 0) return;
-    G.reloading = true;
+    G.reloading = true; if (window.__cmReload) window.__cmReload();
     const a = ctx.anims().find(x => /reload/i.test(x.name));
     const fps = ctx.fps();
     const dur = a && a.count > 1 ? a.count / fps * 1000 : 1400;

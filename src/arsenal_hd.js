@@ -265,7 +265,7 @@ export const HD_FAMILY = {
 export const NEW_WEAPONS = [
   { id: 'mg42', slot: 'assault', war: 2, c: 'Alemanha', n: 'MG 42', d: 'A "serra de Hitler": camisa perfurada, cofre de fita e bipé — 1.200 tiros por minuto.', fx: { cavity: 0.5, scratches: 0.3 },
     build: () => ({ parts: [
-      B(null, 'acoPreto', [40, 330, 54], [0, 40, 0], { bev: 4, cell: 'caixa' }), B(null, 'acoPreto', [44, 120, 18], [0, 70, 34], { bev: 3, cell: 'tampa' }),
+      B(null, 'acoPreto', [40, 330, 54], [0, 40, 0], { bev: 4, cell: 'caixa' }), B('Tampa', 'acoPreto', [44, 120, 18], [0, 70, 34], { bev: 3, cell: 'tampa', pivot: [0, 10, 34] }),
       E(null, 'perfurado', [[210, -26], [520, -22], [520, 24], [210, 30]], 40, [0, 0, 0], { bev: 3, cell: 'camisa' }),
       ...[0, 1, 2, 3, 4, 5, 6].map(i => B(null, 'acoPreto', [44, 10, 8], [0, 240 + i * 40, 28], { cell: 'friso' })),
       B(null, 'acoPreto', [24, 50, 20], [-30, 300, 0], { bev: 3, cell: 'trava' }),
@@ -295,7 +295,7 @@ export const NEW_WEAPONS = [
     build: () => ({ parts: [
       C(null, 'acoOxidado', 24, 380, [0, 60, -6], { seg: 18, cell: 'tubo' }), C(null, 'acoOxidado', 15, 300, [0, 380, 0], { seg: 14, cell: 'camisa' }), ...Array.from({ length: 8 }, (_, i) => T(null, 'acoOxidado', 15, 2.5, [0, 260 + i * 30, 0], { rot: [90, 0, 0], seg: [4, 14], cell: 'anel' })),
       C('Cano', 'acoOxidado', 7, 60, [0, 560, 0], { seg: 10 }), B('Mira', 'acoOxidado', [3, 8, 18], [0, 520, 20]),
-      E('Carregador', 'acoOxidado', [[30, -24], [90, -24], [110, -80], [100, -140], [70, -190], [30, -210], [20, -190], [50, -150], [62, -90], [50, -40]], 22, [0, 0, 0], { bev: 2, holes: [[[52, -60], [70, -90], [64, -130], [48, -100]]], cell: 'pente' }),
+      E('Carregador', 'acoOxidado', [[30, -24], [90, -24], [110, -80], [100, -140], [70, -190], [30, -210], [20, -190], [50, -150], [62, -90], [50, -40]], 22, [0, 0, 0], { bev: 2, pivot: [0, 60, -24], holes: [[[52, -60], [70, -90], [64, -130], [48, -100]]], cell: 'pente' }),
       E(null, 'nogueira', [[-100, -12], [-100, 14], [-340, -10], [-340, -110], [-300, -114], [-150, -52]], 34, [0, 0, 0], { bev: 7, cell: 'coronha' }),
       E(null, 'nogueira', [[-50, -28], [-14, -28], [-22, -80], [-62, -84], [-60, -50]], 28, [0, 0, 0], { bev: 5, cell: 'punho' }),
       E(null, 'nogueira', [[180, -30], [210, -30], [206, -100], [176, -100]], 26, [0, 0, 0], { bev: 5, cell: 'punhof' }),

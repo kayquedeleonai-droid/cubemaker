@@ -5,6 +5,9 @@ import JSZip from 'jszip';
 import { createGame } from './game.js';
 import { ARSENAL, buildPreset, atlasCanvas, FORGE_FAMILIES, FORGE_OPTIONS, forgeDef } from './presets.js';
 import { PROPS, PROP_CATS, propDef } from './props.js';
+import { readExternal, importParts, guessMat } from './importer.js';
+import { createScene } from './scene.js';
+import { soundPreset, renderShot, renderReload, toOgg, play, soundNames, SR } from './sfx.js';
 import { parseMD3, parseMD2, buildMD3, buildMD2, computeIslands, parseCfg, encodeNormal } from './md3.js';
 import { MATS, MAT_ORDER, fbm, TEX, CATS, registerImageTexture } from './materials.js';
 
@@ -251,7 +254,7 @@ function makeSkin(si, img) {
   }
   const texture = new THREE.CanvasTexture(result);
   texture.flipY = false; texture.colorSpace = THREE.SRGBColorSpace; texture.anisotropy = 4;
-  return { si, w, h, orig, origData, base, overlay, result, id, border, mean, dir, mirror, noise, fine, noise2, scr, pos3, nrm3, texture };
+  return { si, w, h, orig, origData, base, overlay, result, id, border, mean, dir, mirror, noise, fine, noise2, scr, pos3, nrm3, texture, edge: img && img.edgeMap && img.edgeMap.length === w * h ? img.edgeMap : null };
 }
 
 function patternFactor(m, sk, i, x, y, isl) {
@@ -285,9 +288,9 @@ function composite(si) {
       if (m.tex) { const c = TEX[m.tex](x * tk, y * tk, m); k *= 0.95 + 0.1 * sk.fine[i]; r = c[0] * k; g = c[1] * k; b = c[2] * k; }
       else { k *= patternFactor(m, sk, i, x * tk, y * tk, isl); r = m.c[0] * k; g = m.c[1] * k; b = m.c[2] * k; }
       if (G.wear > 0 && m.wear) {                       // bordas gastas mostrando metal claro / madeira gasta
-        const bd = sk.border[i];
-        if (bd < 4) {
-          const f = clamp(G.wear * m.wear * (1 - bd / 4) * (0.55 + 0.9 * sk.fine[i]), 0, 1);
+        const bd = sk.border[i], bw = sk.w > 1500 ? 6 : 4, ef = sk.edge ? sk.edge[i] / 255 : 1;
+        if (bd < bw && ef > 0.02) {
+          const f = clamp(G.wear * m.wear * (1 - bd / bw) * (0.55 + 0.9 * sk.fine[i]) * (sk.edge ? 0.4 + 1.4 * ef : 1), 0, 1);
           const t = m.wearColor || [168, 166, 158];
           r += (t[0] * k - r) * f; g += (t[1] * k - g) * f; b += (t[2] * k - b) * f;
         }
@@ -1005,6 +1008,28 @@ const GEN = {
     setKey(g, F(0.6), { t: presetDir(10, 30, 40), r: [-90, 0, 60], e: 'out' }); setKey(g, F(0.85), { t: presetDir(30, -40, 160), r: [-400, 0, 200], e: 'in' });
     setKey(g, F(0.9), { t: presetDir(30, -40, 160), s: 0, e: 'step' });
   },
+  beltReload() {                                // MG 42: abre a tampa, troca o cofre/fita, fecha com tapa
+    const c = clip(/reload/i); if (!c) return; const [a, b] = c, L = b - a, F = p => a + Math.round(p * L);
+    clearKeys(S.root, a, b); setKey(S.root, a, {}); setKey(S.root, F(0.12), { t: [0.8, -1.2, 1.2], r: [8, 18, -10] }); setKey(S.root, F(0.85), { t: [0.8, -1.2, 1.2], r: [10, 16, -10] }); setKey(S.root, b, { e: 'back' });
+    const tp = S.groups[groupByName(/^tampa$/i)];
+    if (tp) { clearKeys(tp, a, b); setKey(tp, F(0.15), {}); setKey(tp, F(0.28), { r: [-75, 0, 0], e: 'out' }); setKey(tp, F(0.7), { r: [-75, 0, 0] }); setKey(tp, F(0.8), { e: 'back' }); }
+    const g = S.groups[groupByName(/^carregador$/i)];
+    if (g) { clearKeys(g, a, b); setKey(g, F(0.28), {}); setKey(g, F(0.42), { t: [-3, 0, -5], r: [0, 0, 20], e: 'in' }); setKey(g, F(0.55), { t: [-3, 0, -5], r: [0, 0, 20] }); setKey(g, F(0.68), { e: 'out' }); }
+  },
+  panReload() {                                 // Lewis: tira o prato de cima, gira e encaixa outro
+    const c = clip(/reload/i); if (!c) return; const [a, b] = c, L = b - a, F = p => a + Math.round(p * L);
+    clearKeys(S.root, a, b); setKey(S.root, a, {}); setKey(S.root, F(0.12), { t: [0, -1, -1], r: [-14, 10, 0] }); setKey(S.root, F(0.85), { t: [0, -1, -1], r: [-14, 8, 0] }); setKey(S.root, b, { e: 'back' });
+    const g = S.groups[groupByName(/^carregador$/i)]; if (!g) return;
+    clearKeys(g, a, b); setKey(g, F(0.15), {}); setKey(g, F(0.32), { t: [2, 0, 6], r: [0, 0, 120], e: 'out' }); setKey(g, F(0.5), { t: [6, 0, 10], r: [0, 0, 200], e: 'in' });
+    setKey(g, F(0.62), { t: [2, 0, 6], r: [0, 0, 300] }); setKey(g, F(0.76), { r: [0, 0, 360], e: 'out' }); setKey(g, b, { r: [0, 0, 360] });
+  },
+  rockReload() {                                // Chauchat: o carregador em meia-lua sai girando para a frente
+    const c = clip(/reload/i); if (!c) return; const [a, b] = c, L = b - a, F = p => a + Math.round(p * L);
+    clearKeys(S.root, a, b); setKey(S.root, a, {}); setKey(S.root, F(0.12), { t: [1, 0, 1.4], r: [-6, -22, 6] }); setKey(S.root, F(0.85), { t: [1, 0, 1.4], r: [-6, -20, 6] }); setKey(S.root, b, { e: 'back' });
+    const g = S.groups[groupByName(/^carregador$/i)]; if (!g) return;
+    clearKeys(g, a, b); setKey(g, F(0.18), {}); setKey(g, F(0.3), { r: [-35, 0, 0], e: 'out' }); setKey(g, F(0.42), { t: [0, 2, -8], r: [-50, 0, 0], e: 'in' });
+    setKey(g, F(0.56), { t: [0, 2, -8], r: [-50, 0, 0] }); setKey(g, F(0.68), { r: [-35, 0, 0], e: 'out' }); setKey(g, F(0.78), { e: 'spring' });
+  },
   toggle({ lift = 70 } = {}) {                 // Luger: a articulação sobe e volta
     const g = S.groups[groupByName(/^ferrolho$/i)]; if (!g) return;
     const [a, b] = clip(/shoot/i) || [0, model.nf - 1];
@@ -1148,6 +1173,7 @@ function presetAnim(def) {
     const side = /sten|mp18/.test(id), drum = /thompson|ppsh/.test(id);
     return { clips: [1, 8, 44], steps: [['recoil', { kick: 1.6, rise: 4, side: 0.8 }], ['bolt', { dist: 2.5 }], ['trigger', { quiet: true }], ['shell', {}], ['tracer', {}], ['reload', { tilt: side ? 12 : 22, dropAxis: side ? '-x' : '-z', drop: side ? 12 : drum ? 12 : 16, spin: drum ? 90 : 0 }]], n: 'recuo, ferrolho, cápsula, traçante e recarga' };
   }
+  if (id === 'mg42' || id === 'lewis' || id === 'chauchat') return { clips: [1, 8, 56], steps: [['recoil', { kick: 3, rise: id === 'mg42' ? 4 : 6, side: id === 'mg42' ? 1.6 : 1 }], ['bolt', { dist: 3 }], ['trigger', { quiet: true }], ['shell', {}], ['tracer', {}], [id === 'mg42' ? 'beltReload' : id === 'lewis' ? 'panReload' : 'rockReload', {}]], n: id === 'mg42' ? 'recuo, cápsula, traçante e troca de fita com a tampa abrindo' : id === 'lewis' ? 'recuo, cápsula, traçante e troca do prato girando' : 'recuo, cápsula, traçante e carregador em meia-lua saindo para a frente' };
   if (slot === 'assault') return { clips: [1, 8, 48], steps: [['recoil', { kick: /bar1918|mg42|lewis|chauchat/.test(id) ? 3 : 2.2, rise: id === 'mg42' ? 4 : 6, side: id === 'mg42' ? 1.6 : 1 }], ['bolt', { dist: 3 }], ['trigger', { quiet: true }], ['shell', {}], ['tracer', {}], ['reload', { tilt: id === 'fg42' ? 12 : id === 'lewis' ? 10 : 26, dropAxis: id === 'fg42' ? '-x' : '-z', spin: id === 'lewis' ? 90 : 0 }]], n: 'recuo, ferrolho, cápsula, traçante e recarga' };
   if (slot === 'sniper') return { clips: [1, 30, 48], steps: [['recoil', { kick: 4, rise: 12, side: 0.5, snap: 0.2 }], ['boltAction', {}], ['trigger', { quiet: true }], ['shell', { at: 0.5 }], id === 'enfield4' ? ['reload', { tilt: 18, boltPull: 0 }] : ['stripper']], n: 'ferrolho manual, cápsula e ' + (id === 'enfield4' ? 'carregador' : 'pente de lâminas') };
   if (slot === 'carbine') {
@@ -1298,7 +1324,47 @@ async function packageFiles() {
     out.push({ path: skinPath(si), data: await skinBlob(si, /\.png$/i.test(S.skinFiles[si]) ? 'image/png' : 'image/jpeg') });
   }
   out.push({ path: dir + 'CREDITOS_LICENCA.txt', data: new Blob([credits()]) });
+  if (S.sound && S.sound.install && SLOTS[S.weapon] && !['knife', 'grenade'].includes(S.weapon)) {      // sons sintetizados da arma
+    let cfgTxt = null;
+    if (gameDir) for (const c of ['config/sounds.cfg', 'config/default_sounds.cfg', 'config/audio.cfg']) { const f = await readAt(c); if (f) { cfgTxt = await f.text(); break; } }
+    const nm = soundNames(S.weapon, cfgTxt);
+    if (nm) {
+      const { shot, rel } = await soundPCM();
+      out.push({ path: `packages/audio/${nm.shot}.ogg`, data: await toOgg(shot) });
+      if (nm.reload) out.push({ path: `packages/audio/${nm.reload}.ogg`, data: await toOgg(rel) });
+      S.sound.names = nm;
+    }
+  }
   return out;
+}
+// ================================================================ ESTÚDIO DE SOM
+const reloadKind = () => S.preset && S.preset.id === 'mg42' ? 'belt' : S.weapon === 'shotgun' ? 'shells' : S.weapon === 'sniper' && !/enfield|smle/.test((S.preset || {}).id || '') ? 'stripper' : 'mag';
+const reloadDur = () => { const c = (S.cfg.match(/md3anim\s+"gun reload"\s+\d+\s+(\d+)\s*(\d+)?/) || []); return c[1] ? Math.min(3, +c[1] / (+c[2] || S.fps || 25)) : 1.8; };
+async function soundPCM() {
+  const key = JSON.stringify([S.sound.p, reloadKind(), reloadDur()]);
+  if (S.sound.cache && S.sound.cache.key === key) return S.sound.cache;
+  S.sound.cache = { key, shot: await renderShot(S.sound.p), rel: await renderReload(S.sound.p, reloadDur(), reloadKind()) };
+  return S.sound.cache;
+}
+function initSound(def) { S.sound = { p: soundPreset(def.slot, def.id), install: S.sound ? S.sound.install : true }; buildSoundUI(); }
+const SOUND_LABELS = [['forca', 'Força (corpo grave)'], ['estalo', 'Estalo (brilho)'], ['eco', 'Eco / cauda'], ['mecanica', 'Mecânica (ferrolho)'], ['tom', 'Tom (calibre)'], ['dist', 'Distância']];
+function buildSoundUI() {
+  const box = $('#soundCtl'); if (!box) return;
+  if (!S.sound) { box.innerHTML = '<p class="hint">Abra uma arma de fogo para criar o som dela.</p>'; return; }
+  box.innerHTML = '';
+  SOUND_LABELS.forEach(([k, n]) => {
+    const row = document.createElement('div'); row.className = 'field slider';
+    row.innerHTML = `<label>${n}</label><input type="range" min="0" max="1" step="0.01" value="${S.sound.p[k]}"><span>${Math.round(S.sound.p[k] * 100)}</span>`;
+    const r = row.querySelector('input'); r.oninput = () => { S.sound.p[k] = +r.value; row.querySelector('span').textContent = Math.round(r.value * 100); };
+    box.appendChild(row);
+  });
+  $('#soundInstall').checked = S.sound.install;
+  $('#soundKind').textContent = { mag: 'troca de carregador', belt: 'troca de fita (tampa abrindo)', shells: 'cartucho por cartucho', stripper: 'pente de lâmina' }[reloadKind()] + ` · ${reloadDur().toFixed(1)} s`;
+}
+window.__cmShot = null; window.__cmReload = null;
+async function armGameSounds() {
+  if (!S.sound) { window.__cmShot = window.__cmReload = null; return; }
+  const { shot, rel } = await soundPCM(); window.__cmShot = () => play(shot); window.__cmReload = () => play(rel);
 }
 // cópia fiel dos arquivos originais carregados
 async function originalFiles() {
@@ -1685,7 +1751,7 @@ async function loadPreset(id) {
   try {
     const [md3Buf0, cfg0] = await Promise.all([fetchBuf(base + 'tris_high.md3'), fetch(base + 'md3.cfg').then(r => r.ok ? r.text() : '')]);
     const m0 = parseMD3(md3Buf0), cfgP = parseCfg(cfg0);
-    const Bp = buildPreset(def, { soft: S.soft !== false }), M0 = slotBasis(slot, m0), R0 = new THREE.Matrix3().getNormalMatrix(M0);
+    const Bp = buildPreset(def, { soft: S.soft !== false, W: S.tex2k ? 2048 : 1024, H: S.tex2k ? 1024 : 512 }), M0 = slotBasis(slot, m0), R0 = new THREE.Matrix3().getNormalMatrix(M0);
     const wIdx = m0.surfaces.findIndex(s => s.name === 'weapon'), ow = m0.surfaces[wIdx];
     const frames = rigidFrames(ow);
     const nv = Bp.pos.length / 3, v = new THREE.Vector3();
@@ -1741,10 +1807,10 @@ async function loadPreset(id) {
     S.gi = S.groups.length ? 0 : -1;
     Object.assign(S.global, { wear: def.hd ? 0.14 : 0.4, age: 0.25, dirt: 0.25 }); S.fx = { ...S.fx, cavity: 0.4, scratches: 0, rust: 0, dust: 0, burn: 0, blood: 0, ...(def.fx || {}) };
     if (def.fx && def.fx.dirt != null) S.global.dirt = def.fx.dirt;
-    S.preset = { id: def.id, n: def.n, war: def.war, c: def.c }; S.presetM = M0.toArray(); S.forge = def.forge ? JSON.parse(JSON.stringify(def.forge)) : null; S.forgeName = def.forge ? def.n : '';
+    S.presetDef = def; S.preset = { id: def.id, n: def.n, war: def.war, c: def.c }; S.presetM = M0.toArray(); S.forge = def.forge ? JSON.parse(JSON.stringify(def.forge)) : null; S.forgeName = def.forge ? def.n : '';
     S.rigid = frames.some(F => !F.equals(new THREE.Matrix4())) ? frames.map(F => F.toArray()) : null;
     S.texK = clamp(1.2 / Bp.density, 0.4, 2.5);
-    applyPresetAnim(def, true);
+    applyPresetAnim(def, true); initSound(def);
     model.surfaces.forEach((_, i) => S.modifiedSkins.add(i));
     skins.forEach((_, i) => composite(i));
     updateAll(); if (!def.forge || !S.forgeKeepCam) frameCamera('orbit'); S.forgeKeepCam = false; goStep(2); updateForgeUI();
@@ -1761,7 +1827,7 @@ async function loadProp(id, vars, keepCam) {
   const def = typeof id === 'string' ? propDef(id) : id; if (!def) return;
   const v = propVars(def, vars);
   try {
-    const Bp = buildPreset({ build: () => def.build(v) }, { W: 1024, H: 1024, ground: true, soft: def.cat === 'item' && def.soft !== false });
+    const Bp = buildPreset({ build: () => def.build(v) }, { W: S.tex2k ? 2048 : 1024, H: S.tex2k ? 2048 : 1024, ground: true, soft: def.cat === 'item' && def.soft !== false });
     const nv = Bp.pos.length / 3, mn = [1e9, 1e9, 1e9], mx = [-1e9, -1e9, -1e9];
     for (let i = 0; i < nv; i++) for (let k = 0; k < 3; k++) { mn[k] = Math.min(mn[k], Bp.pos[i * 3 + k]); mx[k] = Math.max(mx[k], Bp.pos[i * 3 + k]); }
     const off = [-(mn[0] + mx[0]) / 2, -(mn[1] + mx[1]) / 2, -mn[2]];
@@ -1780,7 +1846,7 @@ async function loadProp(id, vars, keepCam) {
     const mmLine = def.mm || `${Math.max(0, Math.round(Math.max(dm[0], dm[1]) / 0.6))} ${Math.max(1, Math.round(dm[2] / 0.3))} 0 0`;
     const cfg = propCfg(def, scalePct, mmLine);
     await loadWeapon({ md3Buf: buf, cfgText: cfg, skinImages: [atlasCanvas(Bp)], weaponName: 'mapmodel_' + def.id, origin: { files: [] } });
-    S.mode = 'prop'; document.body.dataset.mode = 'prop';
+    S.mode = 'prop'; document.body.dataset.mode = 'prop'; S.propDef = def;
     S.prop = { id: def.id, n: def.n, cat: def.cat, war: def.war, pickup: def.pickup || null, vars: v, mm: mmLine, dims: dm.map(x => +x.toFixed(2)), scale: scalePct };
     S.texK = clamp(0.5 / Bp.density, 0.3, 12);
     S.root = { name: 'Modelo inteiro', pivot: [0, 0, 0], keys: {} };
@@ -1829,7 +1895,7 @@ const mapmodelLine = () => `mapmodel ${S.prop ? S.prop.mm : '1 3 0 0'} "${mapmod
 function updatePropUI() {
   const box = $('#propBox'); if (!box) return;
   const on = S.mode === 'prop' && S.prop; box.style.display = on ? '' : 'none'; if (!on) return;
-  const def = propDef(S.prop.id);
+  const def = S.propDef || propDef(S.prop.id);
   $('#propTitle').textContent = def.n; $('#propDesc').textContent = def.d;
   const ctl = $('#propCtl'); ctl.innerHTML = '';
   Object.entries(def.vars || {}).forEach(([key, o]) => {
@@ -1879,6 +1945,30 @@ async function addPropToMap() {
   await appendLog({ acao: 'mapa', quando: new Date().toISOString(), mapa: path, linha: line, indice: n, backup: `${BACKUP}/${stamp}/${path}` });
   toast(`Adicionado ao ${map}.cfg como mapmodel nº ${n}. No editor do AC: /newent mapmodel ${n}`, 'ok');
   $('#mapIdx').textContent = `nº ${n} em ${map}.cfg · no editor: /newent mapmodel ${n}`;
+}
+
+// ================================================================ IMPORTAR (OBJ / GLB do Blender, Sketchfab…)
+let IMP = null;
+const IMP_SIZE = { pistol: 220, subgun: 650, assault: 950, sniper: 1100, carbine: 950, shotgun: 1000, knife: 300, grenade: 250, prop: 1500 };
+async function importFile(file) {
+  try {
+    toast('Lendo ' + file.name + '…');
+    IMP = await readExternal(file);
+    // orientação inicial: maior eixo vira o comprimento (Y)
+    const box = new THREE.Box3(); IMP.meshes.forEach(m => { m.geo.computeBoundingBox(); box.union(m.geo.boundingBox); });
+    const sz = box.getSize(new THREE.Vector3()), rot = sz.x > sz.y ? [0, 0, 90] : [0, 0, 0];
+    const target = $('#impTarget').value;
+    S.imp = { rot, off: [0, 0, 0], target, size: IMP_SIZE[target] || 1500 };
+    $('#impSize').value = S.imp.size; $('#impCtl').style.display = '';
+    $('#impInfo').textContent = `${IMP.name}: ${IMP.meshes.length} peças, ${IMP.tris} triângulos${IMP.tris > 12000 ? ' — pesado para o AC; simplifique no Blender (Decimate) se der' : ''}`;
+    await applyImport();
+  } catch (e) { console.error(e); toast('Não consegui importar: ' + e.message, 'err'); }
+}
+async function applyImport() {
+  if (!IMP) return;
+  const o = S.imp, weapon = o.target !== 'prop', name = IMP.name;
+  if (weapon) await loadPreset({ id: 'import', n: name, c: 'Importado', slot: o.target, war: 2, d: 'Modelo importado', hd: true, build: () => importParts(IMP, { ...o, weapon: true }) });
+  else await loadProp({ id: 'import_' + name.toLowerCase().replace(/[^a-z0-9]+/g, '_').slice(0, 24), cat: 'obj', war: 0, n: name, d: 'Modelo importado — confira a escala pelo soldado de 1,80 m.', build: () => ({ parts: importParts(IMP, { ...o, weapon: false }).parts }) }, null, false);
 }
 
 // ---- Forja (UI)
@@ -2503,7 +2593,27 @@ function bindUI() {
   $('#btnAddMap').onclick = () => addPropToMap().catch(err => toast(err.message, 'err'));
   $$('.btnCopyMM').forEach(b => b.onclick = () => { navigator.clipboard && navigator.clipboard.writeText(mapmodelLine()); toast('Linha copiada: ' + mapmodelLine(), 'ok'); });
   $('#refToggle').onchange = e => { S.showRef = e.target.checked; refMan.visible = S.mode === 'prop' && S.showRef; };
-  $('#btnPropReset').onclick = () => S.prop && loadProp(S.prop.id, S.prop.vars, true);
+  $('#btnPropReset').onclick = () => S.prop && loadProp(S.propDef || S.prop.id, S.prop.vars, true);
+  $('#tex2k').onchange = async e => {
+    S.tex2k = e.target.checked;
+    if (S.mode === 'prop' && S.propDef) await loadProp(S.propDef, S.prop.vars, true);
+    else if (S.presetDef) await loadPreset(S.presetDef);
+    else return toast('A textura 2K vale para modelos do arsenal, Forja, importados e mapmodels', 'warn');
+    goStep(3);
+  };
+  $('#sndShot').onclick = async () => { if (!S.sound) return toast('Abra uma arma primeiro', 'warn'); play((await soundPCM()).shot); };
+  $('#sndReload').onclick = async () => { if (!S.sound) return toast('Abra uma arma primeiro', 'warn'); play((await soundPCM()).rel); };
+  $('#sndReset').onclick = () => { if (S.presetDef) { S.sound.p = soundPreset(S.presetDef.slot, S.presetDef.id); buildSoundUI(); } };
+  $('#sndRandom').onclick = () => { if (!S.sound) return; Object.keys(S.sound.p).forEach(k => S.sound.p[k] = clamp(S.sound.p[k] + (Math.random() - 0.5) * 0.3, 0, 1)); buildSoundUI(); $('#sndShot').click(); };
+  $('#soundInstall').onchange = e => { if (S.sound) S.sound.install = e.target.checked; };
+  $('#sndDownload').onclick = async () => { if (!S.sound) return; const { shot, rel } = await soundPCM(); download(`${(S.preset || {}).id || 'arma'}_tiro.ogg`, await toOgg(shot)); download(`${(S.preset || {}).id || 'arma'}_recarga.ogg`, await toOgg(rel)); };
+  const cena = createScene({ toast, download }); window.CM_cena = cena;
+  $('#btnScene').onclick = () => cena.open();
+  $('#impFile').onchange = e => e.target.files[0] && importFile(e.target.files[0]);
+  ['x', 'y', 'z'].forEach((a, i) => $('#impRot' + a.toUpperCase()).onclick = () => { if (!S.imp) return; S.imp.rot[i] = (S.imp.rot[i] + 90) % 360; applyImport(); });
+  $('#impFlip').onclick = () => { if (!S.imp) return; S.imp.rot[2] = (S.imp.rot[2] + 180) % 360; applyImport(); };
+  $('#impApply').onclick = () => { if (!S.imp) return; S.imp.size = +$('#impSize').value || S.imp.size; S.imp.off = [0, +$('#impOffY').value || 0, +$('#impOffZ').value || 0]; S.imp.target = $('#impTarget').value; applyImport(); };
+  $('#impTarget').onchange = e => { if (!S.imp) return; S.imp.target = e.target.value; S.imp.size = IMP_SIZE[e.target.value] || 1500; $('#impSize').value = S.imp.size; applyImport(); };
   $('#forgeName').onchange = () => { S.forgeName = $('#forgeName').value; if (S.preset) S.preset.n = S.forgeName; };
   $('#openChar').onchange = e => openCharacterFolder(e.target.files).catch(err => toast(err.message, 'err'));
   $$('[data-ins]').forEach(b => b.onclick = () => addInsignia(b.dataset.ins));
@@ -2534,7 +2644,7 @@ function bindUI() {
   $('#fps').onchange = e => S.fps = clamp(+e.target.value || 25, 1, 60);
   $('#prevF').onclick = () => model && setFrame(S.frame > 0 ? S.frame - 1 : model.nf - 1);
   $('#nextF').onclick = () => model && setFrame((S.frame + 1) % model.nf);
-  $('#btnGame').onclick = () => game.enter();
+  $('#btnGame').onclick = async () => { await armGameSounds().catch(() => {}); game.enter(); };
   $('#btnUndo').onclick = undo; $('#btnRedo').onclick = redo;
   $('#btnHelp').onclick = () => $('#help').classList.toggle('show');
   $('#help').onclick = e => { if (e.target.id === 'help' || e.target.classList.contains('close')) $('#help').classList.remove('show'); };
@@ -2629,7 +2739,7 @@ function thumbnail(w = 480, h = 300, hideHands = false) {
   meshes.forEach(m => m.visible = true); refMan.visible = rv; updateColors(); camera.position.copy(saved.p); controls.target.copy(saved.t); controls.update();
   return out.toDataURL('image/png');
 }
-window.CM = { loadProp, PROPS, addPropToMap, packageFiles, startForge, forgeDef, loadCharacter, applyUniform, addInsignia, UNIFORMS, charTarget, loadPreset, ARSENAL, _i: { THREE, get meshes() { return meshes; }, camera, renderer, scene, root, grid, tagMarker, pivotMarker, controls, resize }, debugBox: () => meshes.map(m => { m.geometry.computeBoundingBox(); const b = m.geometry.boundingBox; return [m.visible, b.min.toArray().map(v => +v.toFixed(1)), b.max.toArray().map(v => +v.toFixed(1)), m.geometry.index.count, m.geometry.attributes.position.array.slice(0, 3).join(',')]; }), thumbnail, S, get model() { return model; }, get skins() { return skins; }, loadBundled, loadDemo, exportMD3, createGroup, selectIsland, assignMaterial, applyPreset, applyAnimBank, runGen, setFrame, frameCamera, setTool, parseMD3, parseMD2, undo, captureState, goStep, game, placeDecal, addPrimitive, assembleClips, interpKey };
+window.CM = { soundPCM, toOgg, importFile, loadProp, PROPS, addPropToMap, packageFiles, startForge, forgeDef, loadCharacter, applyUniform, addInsignia, UNIFORMS, charTarget, loadPreset, ARSENAL, _i: { THREE, get meshes() { return meshes; }, camera, renderer, scene, root, grid, tagMarker, pivotMarker, controls, resize }, debugBox: () => meshes.map(m => { m.geometry.computeBoundingBox(); const b = m.geometry.boundingBox; return [m.visible, b.min.toArray().map(v => +v.toFixed(1)), b.max.toArray().map(v => +v.toFixed(1)), m.geometry.index.count, m.geometry.attributes.position.array.slice(0, 3).join(',')]; }), thumbnail, S, get model() { return model; }, get skins() { return skins; }, loadBundled, loadDemo, exportMD3, createGroup, selectIsland, assignMaterial, applyPreset, applyAnimBank, runGen, setFrame, frameCamera, setTool, parseMD3, parseMD2, undo, captureState, goStep, game, placeDecal, addPrimitive, assembleClips, interpKey };
 {
   const h = location.hash.slice(1);
   if (h === 'demo') loadBundled('subgun'); else if (WEAPONS[h]) loadBundled(h);

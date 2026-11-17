@@ -238,3 +238,19 @@ body:not([data-mode="prop"]) .proponly{display:none!important}
 .propinfo small{color:var(--muted)}
 code.mmline{flex:1;font:11.5px var(--mono);background:#141519;border:1px solid var(--line);border-radius:3px;padding:5px 6px;overflow-wrap:anywhere}
 body.pickup .proponly #mapName,body.pickup .proponly #btnAddMap,body.pickup .proponly #mapIdx,body.pickup .btnCopyMM{display:none!important}
+
+.impbox{display:flex;flex-wrap:wrap;gap:10px;align-items:center;background:#16171b;border:1px solid var(--line);border-radius:6px;padding:12px;margin-bottom:8px}
+.impbox select,.impctl input{background:#101114;color:var(--text);border:1px solid var(--line);border-radius:4px;padding:5px}
+.impctl{display:flex;flex-wrap:wrap;gap:8px;align-items:center;width:100%}.impctl input{width:80px}
+
+#sceneView{position:fixed;inset:0;z-index:60;display:grid;grid-template-columns:270px 1fr;background:#111215}
+#sceneView .scpal{overflow:auto;padding:12px;border-right:1px solid var(--line)}
+#sceneView .scpal h3{margin:0 0 6px;color:var(--acc);font-size:14px;letter-spacing:.06em;text-transform:uppercase}
+#sceneView .scpal h4{margin:12px 0 4px;font-size:12px;color:var(--muted);text-transform:uppercase}
+#sceneView #scFind{width:100%;background:#101114;border:1px solid var(--line);color:var(--text);padding:6px;border-radius:4px}
+#sceneView .scitem{display:flex;gap:8px;align-items:center;width:100%;background:#17181c;border:1px solid var(--line);color:var(--text);padding:4px;margin:3px 0;border-radius:4px;cursor:pointer;text-align:left;font-size:12px}
+#sceneView .scitem:hover{border-color:var(--acc)}
+#sceneView .scitem i{width:56px;height:36px;background-size:cover;background-position:center;border-radius:3px;flex:none}
+#sceneView .scmain{position:relative;display:flex;flex-direction:column}
+#sceneView .scbar{height:44px;display:flex;gap:8px;align-items:center;padding:0 10px;border-top:1px solid var(--line)}
+#sceneView canvas{display:block;flex:1}

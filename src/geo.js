@@ -181,6 +181,7 @@ export function partGeometry(p, soft = false) {
     case 'loft': g = loftGeo(p); break;
     case 'wing': g = wingGeo(p); break;
     case 'pillow': g = pillowGeo(p); break;
+    case 'mesh': g = p.geo.clone(); break;
     case 'tube': {
       const curve = new THREE.CatmullRomCurve3(p.pts.map(q => new THREE.Vector3(...q)), !!p.closed);
       g = new THREE.TubeGeometry(curve, p.n || p.pts.length * 3, p.r, p.rs || 5, !!p.closed); break;
@@ -284,7 +285,36 @@ export function buildPreset(def, opts = {}) {
     g.dispose();
   });
   const ao = opts.ao === false ? null : bakeAO(pos, nrm, tris, opts.ground);
-  return { spec, parts, cells, cellOf, pos, nrm, uv, tris, vpart, ao, density, W: AW, H: AH, rects: best, rectList: rects };
+  const edge = bakeEdges(pos, tris);
+  return { spec, parts, cells, cellOf, pos, nrm, uv, tris, vpart, ao, edge, density, W: AW, H: AH, rects: best, rectList: rects };
+}
+
+// ---------------------------------------------------------------- quinas convexas (onde a pintura gasta de verdade)
+// solda os vértices pela posição, calcula a normal suave e o quanto o vértice "salta" em relação aos vizinhos
+function bakeEdges(pos, tris) {
+  const nv = pos.length / 3, key = new Map(), wid = new Int32Array(nv);
+  for (let i = 0; i < nv; i++) { const k = Math.round(pos[i * 3] * 50) + ',' + Math.round(pos[i * 3 + 1] * 50) + ',' + Math.round(pos[i * 3 + 2] * 50); let w = key.get(k); if (w === undefined) { w = key.size; key.set(k, w); } wid[i] = w; }
+  const W = key.size, N = new Float32Array(W * 3), P = new Float32Array(W * 3), A = new Float32Array(W * 3), cnt = new Float32Array(W), el = new Float32Array(W);
+  for (let i = 0; i < nv; i++) P.set([pos[i * 3], pos[i * 3 + 1], pos[i * 3 + 2]], wid[i] * 3);
+  for (let t = 0; t < tris.length; t += 3) {
+    const a = wid[tris[t]], b = wid[tris[t + 1]], c = wid[tris[t + 2]]; if (a === b || b === c || a === c) continue;
+    const ux = P[b * 3] - P[a * 3], uy = P[b * 3 + 1] - P[a * 3 + 1], uz = P[b * 3 + 2] - P[a * 3 + 2], vx = P[c * 3] - P[a * 3], vy = P[c * 3 + 1] - P[a * 3 + 1], vz = P[c * 3 + 2] - P[a * 3 + 2];
+    const nx = -(uy * vz - uz * vy), ny = -(uz * vx - ux * vz), nz = -(ux * vy - uy * vx);      // ordem MD3 invertida
+    for (const [p, q, r] of [[a, b, c], [b, c, a], [c, a, b]]) {
+      N[p * 3] += nx; N[p * 3 + 1] += ny; N[p * 3 + 2] += nz;
+      for (const o of [q, r]) { A[p * 3] += P[o * 3]; A[p * 3 + 1] += P[o * 3 + 1]; A[p * 3 + 2] += P[o * 3 + 2]; cnt[p]++; el[p] += Math.hypot(P[o * 3] - P[p * 3], P[o * 3 + 1] - P[p * 3 + 1], P[o * 3 + 2] - P[p * 3 + 2]); }
+    }
+  }
+  const out = new Float32Array(nv), cw = new Float32Array(W);
+  for (let w = 0; w < W; w++) {
+    if (!cnt[w]) continue;
+    const l = Math.hypot(N[w * 3], N[w * 3 + 1], N[w * 3 + 2]) || 1, e = el[w] / cnt[w] || 1;
+    const dx = P[w * 3] - A[w * 3] / cnt[w], dy = P[w * 3 + 1] - A[w * 3 + 1] / cnt[w], dz = P[w * 3 + 2] - A[w * 3 + 2] / cnt[w];
+    const conv = (dx * N[w * 3] + dy * N[w * 3 + 1] + dz * N[w * 3 + 2]) / l / e;
+    cw[w] = Math.max(0, Math.min(1, (conv - 0.04) * 4));
+  }
+  for (let i = 0; i < nv; i++) out[i] = cw[wid[i]];
+  return out;
 }
 
 // ---------------------------------------------------------------- oclusão de ambiente por voxels
@@ -338,20 +368,20 @@ export function atlasCanvas(Bp, w, h) {
   const c = document.createElement('canvas'); c.width = w; c.height = h;
   const x = c.getContext('2d');
   x.fillStyle = '#5a5a5a'; x.fillRect(0, 0, w, h);
-  const im = x.getImageData(0, 0, w, h), d = im.data, val = new Float32Array(w * h).fill(-1);
+  const im = x.getImageData(0, 0, w, h), d = im.data, val = new Float32Array(w * h).fill(-1), E = Bp.edge, emap = new Uint8Array(w * h);
   const U = Bp.uv, T = Bp.tris, A = Bp.ao;
   for (let t = 0; t < T.length; t += 3) {
     const ia = T[t], ib = T[t + 1], ic = T[t + 2];
     const x0 = U[ia * 2] * w, y0 = U[ia * 2 + 1] * h, x1 = U[ib * 2] * w, y1 = U[ib * 2 + 1] * h, x2 = U[ic * 2] * w, y2 = U[ic * 2 + 1] * h;
     const area = (x1 - x0) * (y2 - y0) - (x2 - x0) * (y1 - y0); if (Math.abs(area) < 1e-9) continue;
-    const a0 = A ? A[ia] : 1, a1 = A ? A[ib] : 1, a2 = A ? A[ic] : 1;
+    const a0 = A ? A[ia] : 1, a1 = A ? A[ib] : 1, a2 = A ? A[ic] : 1, e0 = E ? E[ia] : 1, e1 = E ? E[ib] : 1, e2 = E ? E[ic] : 1;
     const minX = Math.max(0, Math.floor(Math.min(x0, x1, x2) - 1)), maxX = Math.min(w - 1, Math.ceil(Math.max(x0, x1, x2) + 1));
     const minY = Math.max(0, Math.floor(Math.min(y0, y1, y2) - 1)), maxY = Math.min(h - 1, Math.ceil(Math.max(y0, y1, y2) + 1));
     for (let yy = minY; yy <= maxY; yy++) for (let xx = minX; xx <= maxX; xx++) {
       const px = xx + 0.5, py = yy + 0.5;
       let w0 = ((x1 - px) * (y2 - py) - (x2 - px) * (y1 - py)) / area, w1 = ((x2 - px) * (y0 - py) - (x0 - px) * (y2 - py)) / area, w2 = 1 - w0 - w1;
       if (w0 < -0.02 || w1 < -0.02 || w2 < -0.02) continue;
-      val[yy * w + xx] = a0 * w0 + a1 * w1 + a2 * w2;
+      val[yy * w + xx] = a0 * w0 + a1 * w1 + a2 * w2; emap[yy * w + xx] = Math.max(emap[yy * w + xx], Math.round(255 * (e0 * w0 + e1 * w1 + e2 * w2)));
     }
   }
   // borda escura em cada retângulo (cavidade nas quinas) + ruído leve
@@ -373,5 +403,6 @@ export function atlasCanvas(Bp, w, h) {
     d[i * 4] = d[i * 4 + 1] = d[i * 4 + 2] = L; d[i * 4 + 3] = 255;
   }
   x.putImageData(im, 0, 0);
+  c.edgeMap = E ? emap : null;
   return c;
 }

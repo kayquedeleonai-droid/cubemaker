@@ -23,6 +23,12 @@ O trabalho segue um **pipeline em 5 etapas**, para armas e para personagens.
    - Controles para época (1ª/2ª Guerra ou moderna), cano, corpo, coronha, carregador, empunhadura, punho frontal, mira (ferro, luneta, ponto vermelho), boca (freio, supressor, compensador), camisa perfurada, bipé, baioneta, lado da alavanca, metal e madeira.
    - A arma é refeita na hora, já com textura, grupos e animação de fábrica.
 
+0d. **Importar modelo** (.obj, .glb ou .gltf embutido, do Blender, Sketchfab…): vira arma de qualquer slot ou mapmodel. Cada peça vira grupo animável (nomes como magazine/bolt/trigger viram Carregador/Ferrolho/Gatilho) e ganha material pelo nome/cor; dá para girar, inverter a frente, ajustar tamanho e posição.
+0e. **Cena (diorama)**: arraste mapmodels num chão com sombra, gire (Q/E), duplique (D), salve, e exporte as linhas `mapmodel` do mapa + uma planta vista de cima com as posições em cubos do AC.
+0f. **Estúdio de som** (etapa Animação → Som): tiro e recarga sintetizados por arma (força, estalo, eco, mecânica, tom, distância), recarga sincronizada com a animação, exportados em Ogg Vorbis e instalados com backup (nome lido de `config/sounds.cfg`). O Modo Jogo usa esses sons.
+0g. **Texturas**: desgaste só nas quinas salientes de verdade (curvatura calculada da malha) e opção de textura 2K.
+0h. **Animações próprias**: MG 42 abre a tampa e troca a fita, Lewis tira e gira o prato, Chauchat solta o carregador em meia-lua.
+
 0c. **Itens do jogo (pickups)**: caixote de munição de madeira, pentes de pistola, granadas, bolsa de enfermeiro, capacete, colete antiestilhaço e par de 1911 para o akimbo. Substituem só a aparência dos itens do AC (o efeito continua igual) e vão para `packages/models/pickups/<item>/` em MD2 e MD3, com backup.
 
 0b. **Mapmodels da 1ª e 2ª Guerra** (cenário para os seus mapas)

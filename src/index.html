@@ -12,7 +12,7 @@
 </head>
 <body data-step="1">
 <header>
-  <div class="logo"><svg viewBox="0 0 32 32" width="26" height="26"><path d="M16 4l11 6.5v11L16 28 5 21.5v-11z" fill="none" stroke="currentColor" stroke-width="2.4"/><path d="M5 10.5l11 6.5 11-6.5M16 17v11" stroke="currentColor" stroke-width="2" fill="none"/></svg><b>CUBE MAKER</b><span>v1.2</span></div>
+  <div class="logo"><svg viewBox="0 0 32 32" width="26" height="26"><path d="M16 4l11 6.5v11L16 28 5 21.5v-11z" fill="none" stroke="currentColor" stroke-width="2.4"/><path d="M5 10.5l11 6.5 11-6.5M16 17v11" stroke="currentColor" stroke-width="2" fill="none"/></svg><b>CUBE MAKER</b><span>v1.3</span></div>
   <nav class="steps">
     <button data-step="1"><i>1</i>Arma</button>
     <button data-step="2"><i>2</i>Modelagem</button>
@@ -34,12 +34,26 @@
   <div class="pickwrap">
     <h1>O que vamos criar?</h1>
     <p class="muted">Monte uma arma do zero na Forja, pegue um modelo pronto do arsenal, vista um personagem ou parta dos originais do AssaultCube.</p>
+    <h2 class="arsh">Importar modelo · Blender, Sketchfab… <small>Traga um modelo pronto (.obj, .glb ou .gltf embutido). Cada peça vira um grupo animável (nomes como "magazine", "bolt", "trigger" já viram Carregador, Ferrolho e Gatilho) e ganha material pelo nome/cor — depois é só texturizar, animar e instalar.</small></h2>
+    <div class="impbox">
+      <label class="btn">Escolher arquivo<input type="file" id="impFile" accept=".obj,.glb,.gltf" hidden></label>
+      <select id="impTarget"><option value="subgun">Arma · submetralhadora</option><option value="assault">Arma · fuzil de assalto</option><option value="sniper">Arma · fuzil de ferrolho</option><option value="carbine">Arma · carabina</option><option value="shotgun">Arma · escopeta</option><option value="pistol">Arma · pistola</option><option value="knife">Arma · faca</option><option value="grenade">Arma · granada</option><option value="prop">Mapmodel (cenário)</option></select>
+      <span class="muted" id="impInfo">Nenhum arquivo.</span>
+      <div id="impCtl" class="impctl" style="display:none">
+        <button class="btn sm" id="impRotX">Girar X 90°</button><button class="btn sm" id="impRotY">Girar Y 90°</button><button class="btn sm" id="impRotZ">Girar Z 90°</button><button class="btn sm" id="impFlip">Inverter frente</button>
+        <label>Tamanho (mm) <input id="impSize" type="number" min="20" step="10"></label>
+        <label>Avançar (mm) <input id="impOffY" type="number" value="0" step="5"></label>
+        <label>Subir (mm) <input id="impOffZ" type="number" value="0" step="5"></label>
+        <button class="btn sm primary" id="impApply">Aplicar</button>
+      </div>
+    </div>
     <h2 class="arsh">Forja · criar arma do zero <small>Escolha a família e monte a arma: cano, coronha, carregador, mira, boca, bipé, baioneta e época (1ª/2ª Guerra ou moderna). Ela já sai texturizada e animada.</small></h2>
     <div id="forgeFams" class="forgegrid"></div>
     <h2 class="arsh">Arsenal da 1ª e 2ª Guerra <small>Modelos prontos, com textura e animação de fábrica. Cada um entra no lugar de uma arma do AC.</small></h2>
     <nav class="cats arstabs" id="arsenalTabs"></nav>
     <div id="arsenal" class="arsgrid"></div>
     <h2 class="arsh">Mapmodels · cenário da 1ª e 2ª Guerra <small>Fortificações, veículos, tanques, aviões, artilharia, objetos e soldados caídos para os seus mapas. Saem texturizados, alguns animados (hélices, holofotes, bandeira), e instalam em <code>packages/models/mapmodels/cubemaker/</code>.</small></h2>
+    <div class="btnrow"><button class="btn primary" id="btnScene">▦ Montar cena (diorama)</button><span class="muted">Arraste mapmodels num chão, teste a composição e exporte as linhas do mapa + uma planta com as posições.</span></div>
     <nav class="cats arstabs" id="propTabs"></nav>
     <div id="propGrid" class="arsgrid"></div>
     <div class="charbox">
@@ -204,6 +218,10 @@
       </nav>
       <div class="sub on" id="t-bank">
         <section>
+          <label class="chk"><input type="checkbox" id="tex2k"> Textura em alta (2K) — mais nítida de perto; leva alguns segundos a mais</label>
+          <p class="hint">O desgaste agora aparece só nas quinas salientes de verdade (calculado pela geometria), não em toda borda de peça.</p>
+        </section>
+        <section>
           <h3>Presets de época</h3>
           <div class="presets">
             <button class="btn sm" data-preset="mp40">MP40</button><button class="btn sm" data-preset="thompson">Thompson</button>
@@ -278,8 +296,19 @@
     </div>
     <div class="pane weaponpane" data-pane="4">
       <nav class="subtabs">
-        <button data-sub="a-bank" class="on">Banco</button><button data-sub="a-gen">Geradores</button><button data-sub="a-keys">Chaves</button><button data-sub="a-clips">Clipes</button>
+        <button data-sub="a-bank" class="on">Banco</button><button data-sub="a-gen">Geradores</button><button data-sub="a-keys">Chaves</button><button data-sub="a-clips">Clipes</button><button data-sub="a-sound">Som</button>
       </nav>
+      <div class="sub" id="a-sound">
+        <section>
+          <h3>Estúdio de som</h3>
+          <p class="hint">O tiro e a recarga são sintetizados (nada de gravação de terceiros) e saem em .ogg, o formato do AC. A recarga segue o tempo da animação: <b id="soundKind">—</b>.</p>
+          <div id="soundCtl"></div>
+          <div class="btnrow"><button class="btn sm primary" id="sndShot">▶ Tiro</button><button class="btn sm primary" id="sndReload">▶ Recarga</button><button class="btn sm" id="sndRandom">Variar</button><button class="btn sm" id="sndReset">Som de fábrica</button></div>
+          <label class="chk"><input type="checkbox" id="soundInstall" checked> Instalar os sons junto com a arma (com backup)</label>
+          <div class="btnrow"><button class="btn sm" id="sndDownload">Baixar os .ogg</button></div>
+          <p class="hint">O nome do arquivo de som é lido de <code>config/sounds.cfg</code> da pasta conectada; o Modo Jogo já usa estes sons.</p>
+        </section>
+      </div>
       <div class="sub on" id="a-bank">
         <section>
           <div id="presetAnim"></div>
