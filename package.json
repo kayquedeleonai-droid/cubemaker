@@ -1,6 +1,6 @@
 {
   "name": "cubemaker",
-  "version": "1.0.0",
+  "version": "1.3.0",
   "private": true,
   "type": "module",
   "description": "CUBE MAKER — editor de modelos, skins e animações de armas para AssaultCube",
@@ -11,7 +11,8 @@
   },
   "dependencies": {
     "jszip": "3.10.1",
-    "three": "0.160.0"
+    "three": "0.160.0",
+    "wasm-media-encoders": "0.7.0"
   },
   "devDependencies": {
     "esbuild": "^0.28.2",
