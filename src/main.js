@@ -1310,7 +1310,7 @@ async function packageFiles() {
   if (S.mode === 'prop') {
     if (S.prop.pickup) {
       const d = `packages/models/pickups/${S.prop.pickup}/`, fm = finalModel();
-      return [{ path: d + 'tris.md2', data: new Blob([buildMD2(model, fm)]) }, { path: d + 'tris.md3', data: new Blob([buildMD3(model, fm)]) }, { path: d + 'md3.cfg', data: new Blob([S.cfg]) },
+      return [{ path: d + 'tris.md3', data: new Blob([buildMD3(model, fm)]) }, { path: d + 'md3.cfg', data: new Blob([S.cfg]) },
         { path: d + 'skin.jpg', data: await skinBlob(0, 'image/jpeg') }, { path: d + 'CUBEMAKER_LEIA-ME.txt', data: new Blob([`${S.prop.n} — item do jogo feito no CUBE MAKER v${VERSION}.\nSubstitui o modelo "pickups/${S.prop.pickup}" (só a aparência; o efeito do item continua o mesmo).\nPara voltar ao original, apague esta pasta (na pasta home) ou use "Restaurar original" no CUBE MAKER.\n`]) }];
     }
     const d = `packages/models/mapmodels/${mapmodelPath()}/`;
@@ -1908,7 +1908,7 @@ function updatePropUI() {
   $('#propInfo').innerHTML = `${d[0]} × ${d[1]} × ${d[2]} m <small>(largura × comprimento × altura)</small><br>${model.surfaces[0].ntri} triângulos · ${model.nf > 1 ? model.nf + ' quadros animados' : 'estático'}${S.prop.scale !== 100 ? ` · mdlscale ${S.prop.scale}` : ''}`;
   $$('.mmline').forEach(e => e.textContent = S.prop.pickup ? `substitui o item "pickups/${S.prop.pickup}" do jogo` : mapmodelLine());
   document.body.classList.toggle('pickup', !!S.prop.pickup);
-  $$('.mmpath').forEach(e => e.textContent = S.prop.pickup ? `packages/models/pickups/${S.prop.pickup}/ (tris.md2 + tris.md3)` : `packages/models/mapmodels/${mapmodelPath()}/`);
+  $$('.mmpath').forEach(e => e.textContent = S.prop.pickup ? `packages/models/pickups/${S.prop.pickup}/ (tris.md3 + md3.cfg)` : `packages/models/mapmodels/${mapmodelPath()}/`);
 }
 function buildPropUI() {
   const box = $('#propGrid'); if (!box) return;

@@ -101,7 +101,8 @@ export function play(pcm) {
   const s = AC.createBufferSource(); s.buffer = b; s.connect(AC.destination); s.start(); return s;
 }
 // nomes dos sons de cada slot: lidos do config do jogo quando existe; senão, os nomes padrão do AC
-const GUESS = { pistol: ['weapon/pistol', 'weapon/pistol_reload'], subgun: ['weapon/smg', 'weapon/smg_reload'], assault: ['weapon/assault', 'weapon/assault_reload'], sniper: ['weapon/sniper', 'weapon/sniper_reload'], carbine: ['weapon/carbine', 'weapon/carbine_reload'], shotgun: ['weapon/shotgun', 'weapon/shotgun_reload'] };
+// nomes fixos do AssaultCube 1.3 (packages/audio/weapon/)
+const GUESS = { pistol: ['weapon/usp', 'weapon/pistol_reload'], subgun: ['weapon/sub', 'weapon/sub_reload'], assault: ['weapon/auto', 'weapon/auto_reload'], sniper: ['weapon/sniper', 'weapon/sniper_reload'], carbine: ['weapon/carbine', 'weapon/carbine_reload'], shotgun: ['weapon/shotgun', 'weapon/shotgun_reload'] };
 const KEYS = { pistol: /pistol/, subgun: /smg|subgun|mp5|sub\b/, assault: /assault|auto|m16|ar\b/, sniper: /sniper/, carbine: /carbine/, shotgun: /shotgun/ };
 export function soundNames(slot, cfgText) {
   if (cfgText) {
@@ -111,5 +112,5 @@ export function soundNames(slot, cfgText) {
       if (shot) return { shot, reload: rel || null, fromCfg: true };
     }
   }
-  const g = GUESS[slot]; return g ? { shot: g[0], reload: g[1], fromCfg: false } : null;
+  const g = GUESS[slot]; return g ? { shot: g[0], reload: g[1], fromCfg: true } : null;
 }
