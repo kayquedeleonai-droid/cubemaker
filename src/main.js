@@ -1873,11 +1873,12 @@ async function loadProp(id, vars, keepCam) {
     toast(`${def.n} · ${dm[0].toFixed(1)} × ${dm[1].toFixed(1)} × ${dm[2].toFixed(1)} m · ${surf.ntri} triângulos`, 'ok');
   } catch (e) { console.error(e); toast('Falha ao montar o mapmodel: ' + e.message, 'err'); }
 }
+const ascii = t => t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/→/g, '->').replace(/[^\x20-\x7e]/g, '');
 function propCfg(def, scalePct, mmLine, nAnim = 0, fps = 0) {
-  return [`// ${def.n} — mapmodel feito no CUBE MAKER`, 'md3load tris.md3', 'md3skin mapmodel skin.jpg', ...(nAnim > 1 ? [`md3anim "mapmodel" 0 ${nAnim} ${fps}`] : []),
+  return [`// ${ascii(def.n)} - mapmodel feito no CUBE MAKER`, 'md3load tris.md3', 'md3skin mapmodel skin.jpg', ...(nAnim > 1 ? [`md3anim "mapmodel" 0 ${nAnim} ${fps}`] : []),
     ...(scalePct !== 100 ? [`mdlscale ${scalePct}`] : []), `mdlshadowdist 12`,
     `mdlattribute keywords "${{ fort: 'military', veic: 'military', aviao: 'military', art: 'military', obj: 'military', cen: 'rural', sold: 'military' }[def.cat] || 'military'}"`,
-    `mdlattribute desc "${def.n.replace(/"/g, '')}"`, 'mdlattribute author cubemaker', 'mdlattribute distribution custom', `mdlattribute defaults "${mmLine}"`, ''].join('\n');
+    `mdlattribute desc "${ascii(def.n).replace(/"/g, '')}"`, 'mdlattribute author cubemaker', 'mdlattribute distribution custom', `mdlattribute defaults "${mmLine}"`, ''].join('\n');
 }
 function applyPropAnim(def) {
   const A = def.anim;
