@@ -12,7 +12,7 @@
 </head>
 <body data-step="1">
 <header>
-  <div class="logo"><svg viewBox="0 0 32 32" width="26" height="26"><path d="M16 4l11 6.5v11L16 28 5 21.5v-11z" fill="none" stroke="currentColor" stroke-width="2.4"/><path d="M5 10.5l11 6.5 11-6.5M16 17v11" stroke="currentColor" stroke-width="2" fill="none"/></svg><b>CUBE MAKER</b><span>v1.3</span></div>
+  <div class="logo"><svg viewBox="0 0 32 32" width="26" height="26"><path d="M16 4l11 6.5v11L16 28 5 21.5v-11z" fill="none" stroke="currentColor" stroke-width="2.4"/><path d="M5 10.5l11 6.5 11-6.5M16 17v11" stroke="currentColor" stroke-width="2" fill="none"/></svg><b>CUBE MAKER</b><span>v1.4</span></div>
   <nav class="steps">
     <button data-step="1"><i>1</i>Arma</button>
     <button data-step="2"><i>2</i>Modelagem</button>
@@ -137,6 +137,10 @@
       <section>
         <h3>Uniformes prontos</h3>
         <div id="uniforms"></div>
+        <label class="chk"><input type="checkbox" id="charKit" checked> Equipamento pintado (cinto, suspensórios, cartucheiras, bolsos, botões, gola, capacete, perneiras)</label>
+        <label class="chk"><input type="checkbox" id="charGear" checked> Equipamento 3D: capacete, cartucheiras, mochila, cantil e máscara de gás de verdade no modelo</label>
+        <div class="field row"><label style="width:120px">Capacete 3D</label><select id="charHelmet"><option value="">do uniforme</option><option value="stahl">Stahlhelm</option><option value="m1">M1 (EUA)</option><option value="brodie">Brodie</option><option value="adrian">Adrian</option><option value="ssh40">SSh-40</option><option value="none">sem capacete</option></select></div>
+        <p class="hint">O equipamento 3D muda o <code>tris.md2</code> dos jogadores (vale para todos os times; com backup). Use uniformes dos dois lados para os times ficarem coerentes.</p>
       </section>
       <section>
         <h3>Peça por peça</h3>
