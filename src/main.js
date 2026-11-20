@@ -1899,12 +1899,20 @@ async function loadPreset(id) {
     });
     const hi = model.surfaces.findIndex(x => x.name === 'hands');
     if (hi >= 0 && Bp.spec.support && ['subgun', 'assault', 'sniper', 'carbine', 'shotgun'].includes(slot)) {
-      const hs = model.surfaces[hi], order = [...new Set(hs.piece)], isl = new Set();
-      for (let i = 0; i < hs.nIsl; i++) if (hs.piece[i] === order[0]) isl.add(i);
-      const c = [0, 0, 0]; let n = 0; isl.forEach(i => hs.islVerts[i].forEach(vv => { for (let q = 0; q < 3; q++) c[q] += hs.pos[0][vv * 3 + q]; n++; }));
-      const ctr = c.map(x => x / n), sp = new THREE.Vector3(...Bp.spec.support).applyMatrix4(M0).toArray();
+      // O braço inteiro (palma + antebraço) vai junto: gira a partir do cotovelo até a palma chegar no apoio
+      // da arma nova. Mover só a palma soltava a mão do pulso.
+      const hs = model.surfaces[hi], order = [...new Set(hs.piece)], isl = new Set(), P0 = hs.pos[0];
+      for (let i = 0; i < hs.nIsl; i++) isl.add(i);
+      const palm = []; for (let i = 0; i < hs.nIsl; i++) if (hs.piece[i] === order[0]) palm.push(...hs.islVerts[i]);
+      const all = []; isl.forEach(i => all.push(...hs.islVerts[i]));
+      const avg = vs => { const c = new THREE.Vector3(); vs.forEach(vv => c.add(new THREE.Vector3(P0[vv * 3], P0[vv * 3 + 1], P0[vv * 3 + 2]))); return c.divideScalar(Math.max(1, vs.length)); };
+      const C = avg(palm), yMin = Math.min(...all.map(vv => P0[vv * 3 + 1]));
+      const E = avg(all.filter(vv => P0[vv * 3 + 1] < yMin + 2.5));          // cotovelo: ponta de trás do antebraço (fora da tela)
+      const T = new THREE.Vector3(...Bp.spec.support).applyMatrix4(M0);
+      const a = C.clone().sub(E), b = T.clone().sub(E), q = new THREE.Quaternion().setFromUnitVectors(a.clone().normalize(), b.clone().normalize());
+      const eu = new THREE.Euler().setFromQuaternion(q), shift = b.clone().normalize().multiplyScalar(b.length() - a.length());
       const par = groupByName(slot === 'shotgun' ? /^telha$/i : /^carregador$/i);
-      S.groups.push({ name: 'Mão', si: hi, isl, pivot: ctr.map(x => +x.toFixed(2)), t: sp.map((x, q) => +(x - ctr[q]).toFixed(2)), r: Z3(), s: [1, 1, 1], hidden: false, keys: {}, parent: par, rig: true });
+      S.groups.push({ name: 'Mão', si: hi, isl, pivot: E.toArray().map(x => +x.toFixed(3)), t: shift.toArray().map(x => +x.toFixed(3)), r: [eu.x, eu.y, eu.z].map(x => +(x / D2R).toFixed(3)), s: [1, 1, 1], hidden: false, keys: {}, parent: par, rig: true });
     }
     S.gi = S.groups.length ? 0 : -1;
     Object.assign(S.global, { wear: def.hd ? 0.14 : 0.4, age: 0.25, dirt: 0.25 }); S.fx = { ...S.fx, cavity: 0.4, scratches: 0, rust: 0, dust: 0, burn: 0, blood: 0, ...(def.fx || {}) };
