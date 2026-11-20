@@ -5,10 +5,13 @@ import JSZip from 'jszip';
 import { createGame } from './game.js';
 import { ARSENAL, buildPreset, atlasCanvas, FORGE_FAMILIES, FORGE_OPTIONS, forgeDef } from './presets.js';
 import { PROPS, PROP_CATS, propDef } from './props.js';
-import { readExternal, importParts, guessMat } from './importer.js';
+import { readExternal, importParts, guessMat, roundtripBp } from './importer.js';
+import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js';
+import { REFS, refLinks } from './refs.js';
 import { createScene } from './scene.js';
 import { packTexts, slugify, fmtSize, BRAND, cfWhoami, cfConnect, cfPublishPost } from './publish.js';
 import { buildGear, gearFrame, writePlayerMD2 } from './chargear.js';
+import { buildHands, HAND_STYLES, SKIN_TONES, handAnchors, handStyle } from './hands.js';
 import { soundPreset, renderShot, renderReload, toOgg, play, soundNames, SR } from './sfx.js';
 import { parseMD3, parseMD2, buildMD3, buildMD2, computeIslands, parseCfg, encodeNormal } from './md3.js';
 import { MATS, MAT_ORDER, fbm, TEX, CATS, registerImageTexture } from './materials.js';
@@ -16,7 +19,7 @@ import { MATS, MAT_ORDER, fbm, TEX, CATS, registerImageTexture } from './materia
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const D2R = Math.PI / 180;
-const VERSION = '0.2.0';
+const VERSION = '1.7.0';
 
 // ---------------------------------------------------------------- estado
 let model = null;          // MD3 parseado
@@ -118,13 +121,14 @@ function frameCamera(mode = 'orbit') {
 }
 
 // ---------------------------------------------------------------- carregamento do modelo
-async function loadWeapon({ md3Buf, cfgText, skinImages, weaponName, project, skinSources, origin, modelObj }) {
+async function loadWeapon({ md3Buf, cfgText, skinImages, weaponName, project, skinSources, origin, modelObj, rigBytes, handsBuilt }) {
   const m = modelObj || parseMD3(md3Buf);
   S.mode = m.md2 ? 'char' : 'weapon'; document.body.dataset.mode = S.mode; if (!m.md2) S.char = null;
   m.surfaces.forEach(computeIslands);
   meshes.forEach(x => { root.remove(x); x.geometry.dispose(); x.material.dispose(); });
   skins.forEach(sk => sk.texture && sk.texture.dispose());
   model = m; m.nfOrig = m.nf; meshes = []; skins = [];
+  S.rigBytes = rigBytes || null; S.handsBuilt = handsBuilt || null;
   S.originalMD3 = md3Buf; S.cfg = (cfgText || defaultCfg(m)).replace(/\r\n/g, '\n'); S.weapon = weaponName || S.weapon;
   S.global.detail = 1;
   S.originalCfg = cfgText || null; S.skinSources = skinSources || []; S.acOriginal = origin || null; S.preset = null; S.presetM = null; S.rigid = null; S.forge = null;
@@ -1307,7 +1311,7 @@ function charCredits() {
 }
 function credits() {
   return `Arma modificada com CUBE MAKER v${VERSION} (cubemaker.kayquedeleon.app)\n\n` +
-    (S.preset ? `Modelo da arma: ${S.preset.n} (${S.preset.c === 'Forja' ? 'criado na Forja' : S.preset.c}), modelado no CUBE MAKER\nMãos e animações originais do slot: makkE (Markus Bekel) — AssaultCube\n` : `Modelo e textura originais: makkE (Markus Bekel) — AssaultCube\n`) +
+    (S.preset ? `Modelo da arma: ${S.preset.n} (${S.preset.c === 'Forja' ? 'criado na Forja' : S.preset.c}), modelado no CUBE MAKER\n${S.handsBuilt ? `Mãos e mangas: modeladas no CUBE MAKER (${S.handsBuilt.n})\nAnimações originais do slot: makkE (Markus Bekel) — AssaultCube\n` : 'Mãos e animações originais do slot: makkE (Markus Bekel) — AssaultCube\n'}` : `Modelo e textura originais: makkE (Markus Bekel) — AssaultCube\n${S.handsBuilt ? `Mãos e mangas: modeladas no CUBE MAKER (${S.handsBuilt.n})\n` : ''}`) +
     `Licença: Creative Commons Attribution-NonCommercial-ShareAlike 2.5\n` +
     `http://creativecommons.org/licenses/by-nc-sa/2.5/\n\n` +
     `Este trabalho derivado é distribuído sob a mesma licença (BY-NC-SA).\n`;
@@ -1353,6 +1357,155 @@ async function packageFiles() {
     }
   }
   return out;
+}
+// ================================================================ BLENDER: exportar .glb com peças separadas + ficha da arma
+function blenderSpace() {
+  if (S.mode === 'prop') { const k = MM_K * 100 / ((S.prop && S.prop.scale) || 100); return { space: 'prop', k, toMM: v => v.multiplyScalar(1 / k) }; }
+  if (S.presetM) { const Mi = new THREE.Matrix4().fromArray(S.presetM).invert(); return { space: 'preset', toMM: v => v.applyMatrix4(Mi) }; }
+  return { space: 'md3', toMM: v => v.multiplyScalar(18) };
+}
+const toYup = v => v.set(v.x, v.z, -v.y);                       // Z para cima (CUBE MAKER) → Y para cima (glTF); o Blender volta para Z
+const safeName = n => String(n).normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Za-z0-9_.-]+/g, '_').replace(/^_+|_+$/g, '') || 'peca';
+async function buildBlenderGLB() {
+  const sp = blenderSpace(), scene = new THREE.Scene(), name = blenderName();
+  scene.name = safeName(name);
+  const used = new Set(), uname = n => { let k = safeName(n), i = 2; while (used.has(k)) k = safeName(n) + '_' + i++; used.add(k); return k; };
+  const parts = [];
+  for (let si = 0; si < model.surfaces.length; si++) {
+    const s = model.surfaces[si]; if (!/^(weapon|mapmodel)$/.test(s.name)) continue;      // estojo, traçante e mãos o CUBE MAKER recria
+    const r = computeSurface(si, 0), tris = visibleTris(si), buckets = new Map();
+    const gOf = new Map(); S.groups.forEach(g => { if (g.si === si && !g.hidden) g.isl.forEach(i => gOf.set(i, g)); });
+    for (let t = 0; t < tris.length; t += 3) {
+      const isl = s.island[tris[t]], g = gOf.get(isl), mat = S.islandMat[si].get(isl) || null;
+      const key = g ? 'g:' + g.name : 'm:' + (mat || 'base');
+      if (!buckets.has(key)) buckets.set(key, { g, mat, tris: [] });
+      buckets.get(key).tris.push(tris[t], tris[t + 2], tris[t + 1]);           // MD3 (horário) → glTF (anti-horário)
+    }
+    const tex = new THREE.CanvasTexture(skins[si].result); tex.flipY = false; tex.colorSpace = THREE.SRGBColorSpace; tex.name = 'skin_' + s.name;
+    const material = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.7, metalness: 0.1, name: 'skin_' + s.name });
+    buckets.forEach((b, key) => {
+      const map = new Map(), P = [], U = [], I = [], v = new THREE.Vector3();
+      b.tris.forEach(o => { let k = map.get(o); if (k === undefined) { k = map.size; map.set(o, k); sp.toMM(v.set(r.P[o * 3], r.P[o * 3 + 1], r.P[o * 3 + 2])); toYup(v); P.push(v.x / 1000, v.y / 1000, v.z / 1000); U.push(s.st[o * 2], s.st[o * 2 + 1]); } I.push(k); });
+      const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); geo.setAttribute('uv', new THREE.Float32BufferAttribute(U, 2)); geo.setIndex(I); geo.computeVertexNormals();
+      const label = b.g ? b.g.name : (s.name === 'weapon' || s.name === 'mapmodel' ? 'Corpo' : s.name) + (b.mat && MATS[b.mat] ? '_' + MATS[b.mat].n : '');
+      const mesh = new THREE.Mesh(geo, material); mesh.name = uname(label);
+      const piv = b.g ? toYup(sp.toMM(new THREE.Vector3(...b.g.pivot))).toArray().map(x => +(x / 1000).toFixed(5)) : null;
+      mesh.userData = { cubemaker: { surface: s.name, group: b.g ? b.g.name : null, pivot: piv, mat: b.mat } };
+      scene.add(mesh); parts.push({ name: mesh.name, group: b.g ? b.g.name : null, mat: b.mat, surface: s.name, tris: I.length / 3 });
+    });
+  }
+  scene.userData = { cubemaker: { v: 1, app: 'CUBE MAKER ' + VERSION, kind: S.mode === 'prop' ? 'prop' : 'weapon', slot: S.weapon, preset: (S.mode !== 'prop' && S.presetDef && S.presetDef.id) || null, forge: (S.mode !== 'prop' && S.forge) || null, prop: (S.prop && S.prop.id) || null, name, space: sp.space, muzzle: S.mode !== 'prop' && S.presetSpec ? S.presetSpec.muzzle : null, support: S.mode !== 'prop' && S.presetSpec ? S.presetSpec.support : null } };
+  const glb = await new GLTFExporter().parseAsync(scene, { binary: true });
+  return { glb: new Blob([glb], { type: 'model/gltf-binary' }), parts, name };
+}
+function blenderName() { return S.mode === 'prop' ? S.prop.n : ((S.preset && S.preset.n) || S.forgeName || WEAPONS[S.weapon]?.n || S.weapon); }
+function fichaText(name, parts) {
+  const id = S.mode === 'prop' ? (S.prop && S.prop.id) : (S.presetDef && S.presetDef.id), def = S.mode === 'prop' ? S.propDef : S.presetDef, r = REFS[id];
+  const box = new THREE.Box3(); meshes.forEach(m => { if (!m.visible) return; m.geometry.computeBoundingBox(); box.union(m.geometry.boundingBox); });
+  const sp = blenderSpace(), a = sp.toMM(box.min.clone()), b = sp.toMM(box.max.clone()), dim = [0, 1, 2].map(k => Math.abs(b.getComponent(k) - a.getComponent(k)));
+  const L = [];
+  L.push(`# ${name}`, '', `**${BRAND}** · ficha para edição no Blender · gerada pelo CUBE MAKER v${VERSION} em ${new Date().toLocaleDateString('pt-BR')}`, '');
+  L.push('## Identificação', '');
+  if (S.mode === 'prop') L.push(`- Tipo: mapmodel (${(PROP_CATS.find(c => c[0] === S.prop.cat) || [0, S.prop.cat])[1]})`, `- Época: ${S.prop.war === 1 ? '1ª Guerra Mundial' : S.prop.war === 2 ? '2ª Guerra Mundial' : '—'}`);
+  else {
+    L.push(`- Modelo: ${name}`, `- País: ${(S.preset && S.preset.c) || '—'}`, `- Época: ${S.preset && S.preset.war === 1 ? '1ª Guerra Mundial' : S.preset && S.preset.war === 2 ? '2ª Guerra Mundial' : '—'}`);
+    if (r) L.push(`- Ano de adoção: ${r[0]}`, `- Calibre / carga: ${r[1]}`);
+    L.push(`- Slot no AssaultCube: ${S.weapon} (${(WEAPONS[S.weapon] && WEAPONS[S.weapon].n) || S.weapon}) → packages/models/weapons/${S.weapon}/`);
+  }
+  if (def && def.d) L.push(`- Descrição: ${def.d}`);
+  L.push(`- Tamanho do modelo: ${dim.map(x => Math.round(x)).join(' × ')} mm (X × Y × Z no CUBE MAKER; no Blender o comprimento fica no eixo Y)`, '');
+  L.push('## Peças (objetos no Blender)', '', '| Objeto | Grupo animado | Material de origem | Triângulos |', '|---|---|---|---|');
+  parts.forEach(p => L.push(`| ${p.name} | ${p.group || '—'} | ${p.mat && MATS[p.mat] ? MATS[p.mat].n : '—'} | ${p.tris} |`));
+  L.push('', '## Como editar no Blender', '',
+    '1. Blender → File → Import → glTF 2.0 (.glb). Escala real: 1 unidade = 1 metro.',
+    '2. **Não renomeie** os objetos que são grupos animados (Carregador, Ferrolho, Gatilho, Mira, Cano…). É pelo nome que o CUBE MAKER recria o rig e a animação. Peças novas que devam animar: use esses nomes (ou magazine, bolt, trigger, sight, barrel).',
+    '3. Pode mexer na forma, nas UVs e na textura à vontade. Todas as peças usam a imagem do material (skin). Texture Paint ou uma imagem nova no Base Color funcionam; com várias imagens o CUBE MAKER junta tudo num atlas.',
+    '4. Mantenha a arma apontando para +Y (boca do cano para a frente) e perto da origem. Para o AssaultCube, tente ficar abaixo de ~8 mil triângulos.',
+    '5. Exporte: File → Export → glTF 2.0, formato **glTF Binary (.glb)**, com "Custom Properties" marcado (guarda as informações do CUBE MAKER) e "+Y Up" ligado.',
+    '6. No CUBE MAKER: tela inicial → Importar modelo → escolha o .glb. Ele reconhece que veio daqui, mantém sua UV e textura, recria os grupos e aplica de novo a animação de fábrica.', '');
+  L.push('## Referências', '');
+  refLinks(name, id).forEach(([t, u]) => L.push(`- [${t}](${u})`));
+  L.push('', `Direitos: ${BRAND} — © ${new Date().getFullYear()} Kayque Deleon.${S.mode !== 'prop' ? ' Se o pacote final incluir as mãos/animações originais do AC (makkE), vale a licença CC BY-NC-SA 2.5.' : ''}`, '');
+  return L.join('\n');
+}
+async function exportBlender() {
+  if (!model || S.mode === 'char') return toast('Abra uma arma ou um mapmodel', 'warn');
+  try {
+    toast('Montando o .glb para o Blender…');
+    const { glb, parts, name } = await buildBlenderGLB(), slug = slugify(name), zip = new JSZip(), dir = `CUBEFORGE_${slug}_blender/`;
+    zip.file(dir + slug + '.glb', glb);
+    zip.file(dir + 'FICHA.md', fichaText(name, parts));
+    for (let si = 0; si < skins.length; si++) if (/^(weapon|mapmodel)$/.test(model.surfaces[si].name)) zip.file(dir + 'texturas/skin_' + model.surfaces[si].name + '.png', await skinBlob(si, 'image/png'));
+    download(`CUBEFORGE_${slug}_blender.zip`, await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' }));
+    toast(`✔ ${parts.length} objetos exportados para o Blender (com FICHA.md)`, 'ok');
+  } catch (e) { console.error(e); toast('Falha ao exportar: ' + e.message, 'err'); }
+}
+// ================================================================ HUDs da 1ª/2ª Guerra (packages/misc + crosshairs)
+const HUD_FILES = ['misc/items.png', 'misc/huddigits.png', 'misc/compass-base.png', 'misc/compass-rose.png', 'misc/scope.png', 'misc/damage.png', 'misc/teamicons.png', 'crosshairs/default.png', 'crosshairs/teammate.png', 'crosshairs/red_dot.png'];
+let HUDS = null;
+async function hudList() { if (!HUDS) HUDS = await fetch('huds/index.json').then(r => r.json()); return HUDS; }
+function hudTexts(key, h) {
+  const y = new Date().getFullYear();
+  const pt = `${h.name}\n${'='.repeat(h.name.length)}\n${BRAND.replace('Model', 'HUD')}\n\n${h.info}\n\nCOMO INSTALAR\n1) Extraia o zip e copie a pasta "packages" para a pasta do AssaultCube (Documentos\\My Games\\AssaultCube\\v1.3 é a mais segura; a pasta de instalação também serve), juntando as pastas e substituindo os arquivos.\n2) Abra o jogo. Para voltar ao HUD original, apague os arquivos copiados (na pasta Documentos) ou reinstale o jogo.\n\nARQUIVOS\n${HUD_FILES.map(f => '  packages/' + f).join('\n')}\n\nCRÉDITOS E DIREITOS\n${BRAND.replace('Model', 'HUD')} — © ${y} Kayque Deleon. Ícones das armas desenhados a partir dos modelos do CUBE MAKER (obras originais).\nUso livre no AssaultCube com crédito; sem revenda. Fontes: Stardos Stencil, Black Ops One, Allerta Stencil, IM Fell English (SIL Open Font License) e DejaVu (licença livre).\n\nMais conteúdo: https://cubeforge.kayquedeleon.app/arsenal.html\n`;
+  const en = `${h.name}\n${BRAND.replace('Model', 'HUD')}\n\nHOW TO INSTALL\nCopy the "packages" folder into your AssaultCube folder (Documents\\My Games\\AssaultCube\\v1.3 is safest), merging folders and replacing files. Delete those files to go back to the original HUD.\n\n© ${y} Kayque Deleon. Free to use in AssaultCube with credit; no resale.\n`;
+  return { pt, en };
+}
+async function hudZip(key) {
+  const h = (await hudList())[key], zip = new JSZip(), dir = `CUBEFORGE_HUD_${key}/`, T = hudTexts(key, h);
+  for (const f of HUD_FILES) zip.file(dir + 'packages/' + f, await fetchBlob(`huds/${key}/packages/${f}`));
+  zip.file(dir + 'preview.jpg', await fetchBlob(`huds/${key}/preview.jpg`));
+  zip.file(dir + 'LEIA-ME.txt', T.pt); zip.file(dir + 'README_EN.txt', T.en);
+  return { blob: await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' }), h };
+}
+async function hudInstall(key) {
+  if (!(await ensurePerm())) return toast('Sem permissão para gravar na pasta do jogo', 'err');
+  try {
+    const stamp = stampNow(), log = { acao: 'instalar HUD', hud: key, quando: new Date().toISOString(), pasta: gameDir.name, originais: [], backup: [], gravados: [] };
+    for (const f of HUD_FILES) {
+      const p = 'packages/' + f, ex = await readAt(p);
+      if (ex) {
+        if (!(await readAt(`${BACKUP}/originais/${p}`)) && !(await readAt(`${BACKUP}/hud_instalado.txt`))) { await writeAt(`${BACKUP}/originais/${p}`, ex); log.originais.push(p); }
+        await writeAt(`${BACKUP}/${stamp}/${p}`, ex); log.backup.push(p);
+      }
+      await writeAt(p, await fetchBlob(`huds/${key}/packages/${f}`)); log.gravados.push(p);
+    }
+    await writeAt(`${BACKUP}/hud_instalado.txt`, new Blob([key + '\n']));
+    await appendLog(log);
+    $('#hudInfo').textContent = `HUD instalado: ${(await hudList())[key].name}`;
+    toast(`✔ HUD "${(await hudList())[key].name}" instalado. Reinicie o AssaultCube para ver.`, 'ok');
+  } catch (e) { toast('Falha ao instalar o HUD: ' + e.message, 'err'); }
+}
+async function hudRestore() {
+  if (!(await ensurePerm())) return toast('Sem permissão para gravar na pasta do jogo', 'err');
+  let back = 0, gone = 0;
+  for (const f of HUD_FILES) {
+    const p = 'packages/' + f, o = await readAt(`${BACKUP}/originais/${p}`);
+    if (o) { await writeAt(p, o); back++; } else if (await removeAt(p)) gone++;
+  }
+  await removeAt(`${BACKUP}/hud_instalado.txt`);
+  await appendLog({ acao: 'restaurar HUD', quando: new Date().toISOString(), restaurados: back, removidos: gone });
+  $('#hudInfo').textContent = 'HUD original de volta.';
+  toast(`HUD original restaurado (${back} devolvidos, ${gone} removidos). Reinicie o jogo.`, 'ok');
+}
+async function hudPublish(key, btn) {
+  const k = cfKey(); if (!k) return toast('Conecte a conta oficial do CubeForge (etapa Exportar) para publicar', 'warn');
+  btn.disabled = true; const old = btn.textContent; btn.textContent = 'Publicando…';
+  try {
+    const { blob, h } = await hudZip(key);
+    const shot = await fetchBlob(`huds/${key}/preview.jpg`);
+    const r = await cfPublishPost({ key: k, category: 'hud', title: 'HUD ' + h.name.replace(/\b(\w)(\w*)/g, (m, a, b) => a + b.toLowerCase()), description: `${h.info}\n\n${BRAND.replace('Model', 'HUD')} · © Kayque Deleon · uso livre no AC com crédito, sem revenda\n\nComo instalar: veja o LEIA-ME.txt dentro do zip.`, file: blob, fileName: `CUBEFORGE_HUD_${key}.zip`, image: shot, imageName: 'preview.jpg' });
+    toast(`✔ HUD ${r.updated ? 'atualizado' : 'publicado'} no CubeForge`, 'ok'); window.open(r.link, '_blank', 'noopener');
+  } catch (e) { toast(e.message, 'err'); } finally { btn.disabled = false; btn.textContent = old; }
+}
+async function renderHuds() {
+  const box = $('#hudGrid'); if (!box) return;
+  try {
+    const L = await hudList();
+    box.innerHTML = Object.entries(L).map(([k, h]) => `<div class="hudcard"><img src="huds/${k}/preview.jpg" alt="" loading="lazy"><div class="hb"><h4>${h.name}</h4><p>${h.info}</p><div class="btnrow"><button class="btn sm primary" data-hud-inst="${k}">Instalar no jogo</button><button class="btn sm" data-hud-zip="${k}">Baixar .zip</button><button class="btn sm" data-hud-pub="${k}">Publicar no CubeForge</button></div></div></div>`).join('');
+    box.querySelectorAll('[data-hud-inst]').forEach(b => b.onclick = () => hudInstall(b.dataset.hudInst));
+    box.querySelectorAll('[data-hud-zip]').forEach(b => b.onclick = async () => { const { blob } = await hudZip(b.dataset.hudZip); download(`CUBEFORGE_HUD_${b.dataset.hudZip}.zip`, blob); });
+    box.querySelectorAll('[data-hud-pub]').forEach(b => b.onclick = () => hudPublish(b.dataset.hudPub, b));
+  } catch (e) { box.textContent = 'Não consegui carregar os HUDs: ' + e.message; }
 }
 // ================================================================ PUBLICAR NO CUBEFORGE
 function cfKind() { return S.mode === 'prop' ? (S.prop && S.prop.pickup ? 'item' : 'mapmodel') : S.mode === 'char' ? 'char' : 'arma'; }
@@ -1716,20 +1869,57 @@ let DEFAULT_HANDS = null;
 async function fetchBuf(url) { const r = await fetch(url); if (!r.ok) throw new Error('Não encontrei ' + url); return r.arrayBuffer(); }
 async function fetchBlob(url) { const r = await fetch(url); if (!r.ok) throw new Error('Não encontrei ' + url); return r.blob(); }
 const blobToURL = b => new Promise(r => { const f = new FileReader(); f.onload = () => r(f.result); f.readAsDataURL(b); });
+// ---------------------------------------------------------------- mãos próprias (hands.js)
+S.hands = (() => { try { return { style: 'orig', tone: 'media', ...JSON.parse(localStorage.getItem('cm_hands') || '{}') }; } catch (e) { return { style: 'orig', tone: 'media' }; } })();
+function handsSkinCfg(cfg) {
+  const t = (cfg || '').replace(/\r\n/g, '\n');
+  return /^\s*md3skin\s+hands\s+/m.test(t) ? t.replace(/^(\s*md3skin\s+hands\s+)\S+/m, '$1skin_hands.jpg') : t.replace(/\n?$/, '\n') + 'md3skin hands skin_hands.jpg\n';
+}
+// troca a superfície "hands" de m (pronto para buildMD3) pelas mãos novas; m0 = original do slot
+function swapHands(m, m0, slot) {
+  if (!S.hands || S.hands.style === 'orig') return null;
+  const H = buildHands(m0, slot, S.hands.style, S.hands.tone); if (!H) return null;
+  const i = m.surfaces.findIndex(s => s.name === 'hands'); if (i < 0) return null;
+  const nraw = H.nrm.map(N => { const R = new Uint16Array(H.nv); for (let v = 0; v < H.nv; v++) R[v] = encodeNormal(N[v * 3], N[v * 3 + 1], N[v * 3 + 2]); return R; });
+  m.surfaces[i] = { name: 'hands', flags: 0, nv: H.nv, ntri: H.tris.length / 3, shaders: [{ name: 'skin_hands.jpg', index: 0 }], tris: H.tris, st: H.uv, pos: H.pos, nrm: H.nrm, nraw };
+  return { H, img: atlasCanvas(H.Bp), info: { id: H.style.id, n: H.style.n, tone: H.tone } };
+}
+function paintHands(hb) {
+  if (!hb || !model) return;
+  const hi = model.surfaces.findIndex(s => s.name === 'hands'); if (hi < 0) return;
+  const s = model.surfaces[hi];
+  S.islandMat[hi] = new Map(s.islVerts.map((vs, i) => [i, hb.H.Bp.parts[hb.H.Bp.vpart[vs[0]]].mat]));
+  S.modifiedSkins.add(hi); composite(hi);
+}
+async function reloadWithHands() {
+  try { localStorage.setItem('cm_hands', JSON.stringify(S.hands)); } catch (e) { }
+  if (!model || S.mode !== 'weapon') return;
+  if (S.presetDef && S.preset) { S.forgeKeepCam = true; await loadPreset(S.presetDef); }
+  else if (S.bundledKey && rigFor()) await loadBundled(S.bundledKey);
+  else toast('Mãos novas funcionam nas armas do arsenal, da Forja e nas originais do AC', 'warn');
+}
 async function loadBundled(key) {
   const base = `weapons/${key}/`;
   try {
     const [md3Buf, cfgText] = await Promise.all([fetchBuf(base + 'tris_high.md3'), fetch(base + 'md3.cfg').then(r => r.ok ? r.text() : null)]);
     const m = parseMD3(md3Buf), cfg = parseCfg(cfgText || '');
-    const imgs = [], srcs = [];
+    const imgs = [], srcs = [], orig = [{ path: `packages/models/weapons/${key}/tris_high.md3`, data: new Blob([md3Buf]) }];
+    if (cfgText) orig.push({ path: `packages/models/weapons/${key}/md3.cfg`, data: new Blob([cfgText]) });
     for (const s of m.surfaces) {
       const rel = cfg.skins[s.name] || 'skin_weapon.jpg';
       const url = new URL(rel, new URL(base, location.href)).href;
-      try { const b = await fetchBlob(url); srcs.push(b); imgs.push(await loadImage(await blobToURL(b))); }
+      try { const b = await fetchBlob(url); srcs.push(b); imgs.push(await loadImage(await blobToURL(b))); if (s.name !== 'hands') orig.push({ path: 'packages/models/weapons/' + new URL(rel, 'http://x/' + key + '/').pathname.slice(1), data: b }); }
       catch (e) { srcs.push(null); imgs.push(null); }
     }
-    await loadWeapon({ md3Buf, cfgText, skinImages: imgs, weaponName: key, skinSources: srcs });
-    goStep(2);
+    const m1 = { ...m, surfaces: [...m.surfaces] }, hb = swapHands(m1, m, key);
+    if (hb) {
+      const hi = m1.surfaces.findIndex(s => s.name === 'hands'); imgs[hi] = hb.img; srcs[hi] = null;
+      const buf = buildMD3(m1, { surfaces: m1.surfaces.map(s => ({ tris: s.tris, pos: s.pos, nrm: s.nrm, nraw: s.nraw })), tags: m1.tags });
+      await loadWeapon({ md3Buf: buf, cfgText: handsSkinCfg(cfgText), skinImages: imgs, weaponName: key, skinSources: srcs, origin: { files: orig }, rigBytes: md3Buf.byteLength, handsBuilt: hb.info });
+      paintHands(hb);
+    } else await loadWeapon({ md3Buf, cfgText, skinImages: imgs, weaponName: key, skinSources: srcs });
+    S.bundledKey = key;
+    updateAll(); goStep(2);
   } catch (e) {
     toast(location.protocol === 'file:' ? 'Abrindo direto do disco o navegador bloqueia os modelos embutidos. Use cubemaker.kayquedeleon.app ou "Abrir pasta de arma".' : e.message, 'err');
   }
@@ -1771,7 +1961,7 @@ const RIGS = {
   grenade: { bytes: 257924, groups: [{ name: 'Pino', surf: 'weapon', pieces: [0, 4] }, { name: 'Alavanca', surf: 'weapon', pieces: [3] }] },
 };
 function rigFor() {
-  const n = S.originalMD3 && S.originalMD3.byteLength;
+  const n = S.rigBytes || (S.originalMD3 && S.originalMD3.byteLength);
   return Object.entries(RIGS).find(([k, r]) => r.bytes === n) || null;
 }
 function applyRig({ silent = false } = {}) {
@@ -1785,6 +1975,7 @@ function applyRig({ silent = false } = {}) {
     const si = model.surfaces.findIndex(s => s.name === G.surf); if (si < 0) return;
     const s = model.surfaces[si], order = [...new Set(s.piece)];
     const isl = new Set(); G.pieces.forEach(k => { const p = order[k]; for (let i = 0; i < s.nIsl; i++) if (s.piece[i] === p) isl.add(i); });
+    if (G.surf === 'hands' && S.handsBuilt) { isl.clear(); for (let i = 0; i < s.nIsl; i++) isl.add(i); }
     if (!isl.size) return;
     S.groups.forEach(g => { if (g.si === si) isl.forEach(i => g.isl.delete(i)); });
     const c = [0, 0, 0], mx = [-1e9, -1e9, -1e9]; let n = 0;
@@ -1853,7 +2044,7 @@ async function loadPreset(id) {
   try {
     const [md3Buf0, cfg0] = await Promise.all([fetchBuf(base + 'tris_high.md3'), fetch(base + 'md3.cfg').then(r => r.ok ? r.text() : '')]);
     const m0 = parseMD3(md3Buf0), cfgP = parseCfg(cfg0);
-    const Bp = buildPreset(def, { soft: S.soft !== false, W: S.tex2k ? 2048 : 1024, H: S.tex2k ? 1024 : 512 }), M0 = slotBasis(slot, m0), R0 = new THREE.Matrix3().getNormalMatrix(M0);
+    const Bp = def.bp ? def.bp() : buildPreset(def, { soft: S.soft !== false, W: S.tex2k ? 2048 : 1024, H: S.tex2k ? 1024 : 512 }), M0 = def.md3Space ? new THREE.Matrix4() : slotBasis(slot, m0), R0 = new THREE.Matrix3().getNormalMatrix(M0);
     const wIdx = m0.surfaces.findIndex(s => s.name === 'weapon'), ow = m0.surfaces[wIdx];
     const frames = rigidFrames(ow);
     const nv = Bp.pos.length / 3, v = new THREE.Vector3();
@@ -1874,18 +2065,21 @@ async function loadPreset(id) {
       return { origin: o.toArray(), axis: t.axis };
     }));
     const m1 = { ...m0, surfaces, tags };
-    const buf = buildMD3(m1, { surfaces: surfaces.map(s => ({ tris: s.tris, pos: s.pos, nrm: s.nrm, nraw: s.nraw })), tags });
+    const hb = swapHands(m1, m0, slot);
+    const buf = buildMD3(m1, { surfaces: m1.surfaces.map(s => ({ tris: s.tris, pos: s.pos, nrm: s.nrm, nraw: s.nraw })), tags });
     // skins
     const imgs = [], srcs = [], files = [{ path: `packages/models/weapons/${slot}/tris_high.md3`, data: new Blob([md3Buf0]) }, { path: `packages/models/weapons/${slot}/md3.cfg`, data: new Blob([cfg0]) }];
     for (const s of parseMD3(buf).surfaces) {
+      if (hb && s.name === 'hands') { imgs.push(hb.img); srcs.push(null); continue; }
       const rel = cfgP.skins[s.name] || 'skin_weapon.jpg', url = new URL(rel, new URL(base, location.href)).href;
       const blob = await fetchBlob(url).catch(() => null);
       const path = 'packages/models/weapons/' + new URL(rel, 'http://x/' + slot + '/').pathname.slice(1);
       if (blob) files.push({ path, data: blob });
-      if (s.name === 'weapon') { imgs.push(atlasCanvas(Bp)); srcs.push(null); }
+      if (s.name === 'weapon') { imgs.push(Bp.image || atlasCanvas(Bp)); srcs.push(null); }
       else { imgs.push(blob ? await loadImage(await blobToURL(blob)) : null); srcs.push(blob); }
     }
-    await loadWeapon({ md3Buf: buf, cfgText: cfg0, skinImages: imgs, weaponName: slot, skinSources: srcs, origin: { files } });
+    await loadWeapon({ md3Buf: buf, cfgText: hb ? handsSkinCfg(cfg0) : cfg0, skinImages: imgs, weaponName: slot, skinSources: srcs, origin: { files }, handsBuilt: hb && hb.info });
+    S.bundledKey = null; if (hb) paintHands(hb);
     // materiais, grupos, mãos
     const s = model.surfaces[wi], partOfIsl = s.islVerts.map(vs => Bp.vpart[vs[0]]);
     S.islandMat[wi] = new Map(partOfIsl.map((p, i) => [i, Bp.parts[p].mat]));
@@ -1901,13 +2095,10 @@ async function loadPreset(id) {
     if (hi >= 0 && Bp.spec.support && ['subgun', 'assault', 'sniper', 'carbine', 'shotgun'].includes(slot)) {
       // O braço inteiro (palma + antebraço) vai junto: gira a partir do cotovelo até a palma chegar no apoio
       // da arma nova. Mover só a palma soltava a mão do pulso.
-      const hs = model.surfaces[hi], order = [...new Set(hs.piece)], isl = new Set(), P0 = hs.pos[0];
+      const hs = model.surfaces[hi], isl = new Set();
       for (let i = 0; i < hs.nIsl; i++) isl.add(i);
-      const palm = []; for (let i = 0; i < hs.nIsl; i++) if (hs.piece[i] === order[0]) palm.push(...hs.islVerts[i]);
-      const all = []; isl.forEach(i => all.push(...hs.islVerts[i]));
-      const avg = vs => { const c = new THREE.Vector3(); vs.forEach(vv => c.add(new THREE.Vector3(P0[vv * 3], P0[vv * 3 + 1], P0[vv * 3 + 2]))); return c.divideScalar(Math.max(1, vs.length)); };
-      const C = avg(palm), yMin = Math.min(...all.map(vv => P0[vv * 3 + 1]));
-      const E = avg(all.filter(vv => P0[vv * 3 + 1] < yMin + 2.5));          // cotovelo: ponta de trás do antebraço (fora da tela)
+      const HA = handAnchors(m0.surfaces.find(x => x.name === 'hands'));      // medido nas mãos originais do slot
+      const C = HA.Hc.clone(), E = HA.E.clone();                              // centro da palma e cotovelo (fora da tela)
       const T = new THREE.Vector3(...Bp.spec.support).applyMatrix4(M0);
       const a = C.clone().sub(E), b = T.clone().sub(E), q = new THREE.Quaternion().setFromUnitVectors(a.clone().normalize(), b.clone().normalize());
       const eu = new THREE.Euler().setFromQuaternion(q), shift = b.clone().normalize().multiplyScalar(b.length() - a.length());
@@ -1917,6 +2108,7 @@ async function loadPreset(id) {
     S.gi = S.groups.length ? 0 : -1;
     Object.assign(S.global, { wear: def.hd ? 0.14 : 0.4, age: 0.25, dirt: 0.25 }); S.fx = { ...S.fx, cavity: 0.4, scratches: 0, rust: 0, dust: 0, burn: 0, blood: 0, ...(def.fx || {}) };
     if (def.fx && def.fx.dirt != null) S.global.dirt = def.fx.dirt;
+    S.presetSpec = { muzzle: Bp.spec.muzzle || null, support: Bp.spec.support || null };
     S.presetDef = def; S.preset = { id: def.id, n: def.n, war: def.war, c: def.c }; S.presetM = M0.toArray(); S.forge = def.forge ? JSON.parse(JSON.stringify(def.forge)) : null; S.forgeName = def.forge ? def.n : '';
     S.rigid = frames.some(F => !F.equals(new THREE.Matrix4())) ? frames.map(F => F.toArray()) : null;
     S.texK = clamp(1.2 / Bp.density, 0.4, 2.5);
@@ -1937,7 +2129,7 @@ async function loadProp(id, vars, keepCam) {
   const def = typeof id === 'string' ? propDef(id) : id; if (!def) return;
   const v = propVars(def, vars);
   try {
-    const Bp = buildPreset({ build: () => def.build(v) }, { W: S.tex2k ? 2048 : 1024, H: S.tex2k ? 2048 : 1024, ground: true, soft: def.cat === 'item' && def.soft !== false });
+    const Bp = def.bp ? def.bp() : buildPreset({ build: () => def.build(v) }, { W: S.tex2k ? 2048 : 1024, H: S.tex2k ? 2048 : 1024, ground: true, soft: def.cat === 'item' && def.soft !== false });
     const nv = Bp.pos.length / 3, mn = [1e9, 1e9, 1e9], mx = [-1e9, -1e9, -1e9];
     for (let i = 0; i < nv; i++) for (let k = 0; k < 3; k++) { mn[k] = Math.min(mn[k], Bp.pos[i * 3 + k]); mx[k] = Math.max(mx[k], Bp.pos[i * 3 + k]); }
     const off = [-(mn[0] + mx[0]) / 2, -(mn[1] + mx[1]) / 2, -mn[2]];
@@ -1955,7 +2147,7 @@ async function loadProp(id, vars, keepCam) {
     const dm = [(mx[0] - mn[0]) / 1000, (mx[1] - mn[1]) / 1000, (mx[2] - mn[2]) / 1000];
     const mmLine = def.mm || `${Math.max(0, Math.round(Math.max(dm[0], dm[1]) / 0.6))} ${Math.max(1, Math.round(dm[2] / 0.3))} 0 0`;
     const cfg = propCfg(def, scalePct, mmLine);
-    await loadWeapon({ md3Buf: buf, cfgText: cfg, skinImages: [atlasCanvas(Bp)], weaponName: 'mapmodel_' + def.id, origin: { files: [] } });
+    await loadWeapon({ md3Buf: buf, cfgText: cfg, skinImages: [Bp.image || atlasCanvas(Bp)], weaponName: 'mapmodel_' + def.id, origin: { files: [] } });
     S.mode = 'prop'; document.body.dataset.mode = 'prop'; S.propDef = def;
     S.prop = { id: def.id, n: def.n, cat: def.cat, war: def.war, pickup: def.pickup || null, vars: v, mm: mmLine, dims: dm.map(x => +x.toFixed(2)), scale: scalePct };
     S.texK = clamp(0.5 / Bp.density, 0.3, 12);
@@ -2065,6 +2257,13 @@ async function importFile(file) {
   try {
     toast('Lendo ' + file.name + '…');
     IMP = await readExternal(file);
+    if (IMP.textured) {                                    // veio do Blender com UV e textura: mantém tudo
+      const meta = IMP.meta || {};
+      IMP.round = { meta, kind: meta.kind || ($('#impTarget').value === 'prop' ? 'prop' : 'weapon'), slot: meta.slot || $('#impTarget').value };
+      $('#impInfo').textContent = `${IMP.name}: ${IMP.meshes.length} peças, ${IMP.tris} triângulos · UV e textura preservadas${meta.v ? ' · veio do CUBE MAKER (' + (meta.name || '') + ')' : ''}`;
+      $('#impCtl').style.display = 'none';
+      return applyRoundtrip();
+    }
     // orientação inicial: maior eixo vira o comprimento (Y)
     const box = new THREE.Box3(); IMP.meshes.forEach(m => { m.geo.computeBoundingBox(); box.union(m.geo.boundingBox); });
     const sz = box.getSize(new THREE.Vector3()), rot = sz.x > sz.y ? [0, 0, 90] : [0, 0, 0];
@@ -2077,11 +2276,29 @@ async function importFile(file) {
 }
 async function applyImport() {
   if (!IMP) return;
+  if (IMP.round) return applyRoundtrip();
   const o = S.imp, weapon = o.target !== 'prop', name = IMP.name;
   if (weapon) await loadPreset({ id: 'import', n: name, c: 'Importado', slot: o.target, war: 2, d: 'Modelo importado', hd: true, build: () => importParts(IMP, { ...o, weapon: true }) });
   else await loadProp({ id: 'import_' + name.toLowerCase().replace(/[^a-z0-9]+/g, '_').slice(0, 24), cat: 'obj', war: 0, n: name, d: 'Modelo importado — confira a escala pelo soldado de 1,80 m.', build: () => ({ parts: importParts(IMP, { ...o, weapon: false }).parts }) }, null, false);
 }
 
+async function applyRoundtrip() {
+  const R = IMP.round, meta = R.meta, nm = meta.name || IMP.name;
+  const scale = meta.space === 'md3' ? 1 / 18 : 1;
+  const bp = () => roundtripBp(IMP, { scale, muzzle: meta.muzzle, support: meta.support });
+  if (R.kind === 'prop') {
+    const base = meta.prop ? propDef(meta.prop) : null;
+    await loadProp({ ...(base || { cat: 'obj', war: 0 }), id: (base ? base.id : 'blender_' + slugify(nm).replace(/-/g, '_')).slice(0, 32), n: nm, d: (base && base.d) || 'Modelo editado no Blender', bp, vars: undefined }, null, false);
+  } else {
+    let base = meta.preset ? ARSENAL.find(a => a.id === meta.preset) : null;
+    if (!base && meta.forge) base = forgeDef(meta.forge.fam, meta.forge.p, nm);
+    const slot = (base && base.slot) || R.slot || 'subgun';
+    const surfaceSlot = SLOTS[slot] ? slot : 'subgun';
+    await loadPreset({ ...(base || { id: 'blender', c: 'Blender', war: 2, hd: true }), slot: surfaceSlot, n: nm, d: (base && base.d) || 'Modelo editado no Blender', bp, md3Space: meta.space === 'md3', build: undefined });
+    S.forge = null; S.forgeName = ''; updateForgeUI();
+  }
+  toast(`✔ ${nm} reimportado do Blender: UV e textura mantidas, grupos e animação refeitos`, 'ok');
+}
 // ---- Forja (UI)
 let forgeT = 0;
 function startForge(fam) { const F = FORGE_FAMILIES[fam]; return loadPreset(forgeDef(fam, { ...F.p }, 'Minha ' + F.n.toLowerCase())); }
@@ -2844,6 +3061,19 @@ function bindUI() {
   $('#cfConnect').onclick = async () => { $('#cfStatus').textContent = 'Entre com a conta oficial na janela do CubeForge e clique em “Autorizar o CUBE MAKER”…'; try { const d = await cfConnect(); if (await cfUseKey(d.key, d.user)) toast('CUBE MAKER conectado ao CubeForge', 'ok'); } catch (e) { $('#cfStatus').textContent = '✖ ' + e.message; } };
   $('#cfLogout').onclick = () => { try { localStorage.removeItem('cm_cf_key'); } catch (e) { } cfShowAccount(null); $('#cfStatus').textContent = 'Desconectado neste navegador. Para desligar a chave de vez, use “Desconectar” em Minha conta no CubeForge.'; };
   $('#cfKeySave').onclick = () => { const k = $('#cfKeyIn').value.trim(); if (k) cfUseKey(k).then(ok => { if (ok) { $('#cfKeyIn').value = ''; $('.cfbox details').open = false; } }); };
+  { // mãos e mangas
+    const fill = () => {
+      document.querySelectorAll('.handsStyle').forEach(sel => { sel.innerHTML = [[0, 'Original'], [2, '2ª Guerra Mundial'], [1, '1ª Guerra Mundial']].map(([w, l]) => `<optgroup label="${l}">` + HAND_STYLES.filter(h => h.war === w).map(h => `<option value="${h.id}">${h.n}</option>`).join('') + '</optgroup>').join(''); sel.value = S.hands.style; });
+      document.querySelectorAll('.handsTone').forEach(sel => { sel.innerHTML = SKIN_TONES.map(([k, n]) => `<option value="${k}">Pele ${n.toLowerCase()}</option>`).join(''); sel.value = S.hands.tone; });
+    };
+    fill();
+    const sync = () => { document.querySelectorAll('.handsStyle').forEach(x => x.value = S.hands.style); document.querySelectorAll('.handsTone').forEach(x => x.value = S.hands.tone); try { localStorage.setItem('cm_hands', JSON.stringify(S.hands)); } catch (e) { } };
+    document.querySelectorAll('.handsStyle').forEach(sel => sel.onchange = () => { S.hands.style = sel.value; sync(); });
+    document.querySelectorAll('.handsTone').forEach(sel => sel.onchange = () => { S.hands.tone = sel.value; sync(); });
+    document.querySelectorAll('.btnHands').forEach(b => b.onclick = () => reloadWithHands());
+  }
+  renderHuds(); $('#btnHudRestore').onclick = hudRestore;
+  $('#btnBlender').onclick = exportBlender;
   $('#cfPublish').onclick = cfPublish;
   $('#cfZip').onclick = async () => { try { const P = await cfPackage(); download(`CUBEFORGE_${P.slug}.zip`, P.blob); $('#cfStatus').textContent = `Pacote de ${P.tamanho} baixado.`; } catch (e) { toast(e.message, 'err'); } };
   $('#sndShot').onclick = async () => { if (!S.sound) return toast('Abra uma arma primeiro', 'warn'); play((await soundPCM()).shot); };
@@ -2992,7 +3222,7 @@ function viewChar(v = 'front', zoom = 1) {
   if (zoom > 1) c.y += sz * 0.12;
   camera.position.copy(c).addScaledVector(f, sz * 1.25 / zoom); controls.target.copy(c); camera.lookAt(c); controls.update();
 }
-window.CM = { cfPackage, cfDefaults, refreshGear, soundPCM, viewChar, toOgg, importFile, loadProp, PROPS, addPropToMap, packageFiles, startForge, forgeDef, loadCharacter, applyUniform, addInsignia, UNIFORMS, charTarget, loadPreset, ARSENAL, _i: { THREE, get meshes() { return meshes; }, camera, renderer, scene, root, grid, tagMarker, pivotMarker, controls, resize }, debugBox: () => meshes.map(m => { m.geometry.computeBoundingBox(); const b = m.geometry.boundingBox; return [m.visible, b.min.toArray().map(v => +v.toFixed(1)), b.max.toArray().map(v => +v.toFixed(1)), m.geometry.index.count, m.geometry.attributes.position.array.slice(0, 3).join(',')]; }), thumbnail, S, get model() { return model; }, get skins() { return skins; }, loadBundled, loadDemo, exportMD3, createGroup, selectIsland, assignMaterial, applyPreset, applyAnimBank, runGen, setFrame, frameCamera, setTool, parseMD3, parseMD2, undo, captureState, goStep, game, placeDecal, addPrimitive, assembleClips, interpKey };
+window.CM = { exportBlender, buildBlenderGLB, hudZip, reloadWithHands, HAND_STYLES, cfPackage, cfDefaults, refreshGear, soundPCM, viewChar, toOgg, importFile, loadProp, PROPS, addPropToMap, packageFiles, startForge, forgeDef, loadCharacter, applyUniform, addInsignia, UNIFORMS, charTarget, loadPreset, ARSENAL, _i: { THREE, get meshes() { return meshes; }, camera, renderer, scene, root, grid, tagMarker, pivotMarker, controls, resize }, debugBox: () => meshes.map(m => { m.geometry.computeBoundingBox(); const b = m.geometry.boundingBox; return [m.visible, b.min.toArray().map(v => +v.toFixed(1)), b.max.toArray().map(v => +v.toFixed(1)), m.geometry.index.count, m.geometry.attributes.position.array.slice(0, 3).join(',')]; }), thumbnail, S, get model() { return model; }, get skins() { return skins; }, loadBundled, loadDemo, exportMD3, createGroup, selectIsland, assignMaterial, applyPreset, applyAnimBank, runGen, setFrame, frameCamera, setTool, parseMD3, parseMD2, undo, captureState, goStep, game, placeDecal, addPrimitive, assembleClips, interpKey };
 {
   const h = location.hash.slice(1);
   if (h === 'demo') loadBundled('subgun'); else if (WEAPONS[h]) loadBundled(h);

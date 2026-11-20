@@ -12,7 +12,7 @@
 </head>
 <body data-step="1">
 <header>
-  <div class="logo"><svg viewBox="0 0 32 32" width="26" height="26"><path d="M16 4l11 6.5v11L16 28 5 21.5v-11z" fill="none" stroke="currentColor" stroke-width="2.4"/><path d="M5 10.5l11 6.5 11-6.5M16 17v11" stroke="currentColor" stroke-width="2" fill="none"/></svg><b>CUBE MAKER</b><span>v1.6.1</span></div>
+  <div class="logo"><svg viewBox="0 0 32 32" width="26" height="26"><path d="M16 4l11 6.5v11L16 28 5 21.5v-11z" fill="none" stroke="currentColor" stroke-width="2.4"/><path d="M5 10.5l11 6.5 11-6.5M16 17v11" stroke="currentColor" stroke-width="2" fill="none"/></svg><b>CUBE MAKER</b><span>v1.7</span></div>
   <nav class="steps">
     <button data-step="1"><i>1</i>Arma</button>
     <button data-step="2"><i>2</i>Modelagem</button>
@@ -34,7 +34,7 @@
   <div class="pickwrap">
     <h1>O que vamos criar?</h1>
     <p class="muted">Monte uma arma do zero na Forja, pegue um modelo pronto do arsenal, vista um personagem ou parta dos originais do AssaultCube.</p>
-    <h2 class="arsh">Importar modelo · Blender, Sketchfab… <small>Traga um modelo pronto (.obj, .glb ou .gltf embutido). Cada peça vira um grupo animável (nomes como "magazine", "bolt", "trigger" já viram Carregador, Ferrolho e Gatilho) e ganha material pelo nome/cor — depois é só texturizar, animar e instalar.</small></h2>
+    <h2 class="arsh">Importar modelo · Blender, Sketchfab… <small>Traga um modelo pronto (.obj, .glb ou .gltf embutido). Veio do botão "Blender" da etapa Exportar? UV, textura, grupos e animação voltam sozinhos. Cada peça vira um grupo animável (nomes como "magazine", "bolt", "trigger" já viram Carregador, Ferrolho e Gatilho) e ganha material pelo nome/cor — depois é só texturizar, animar e instalar.</small></h2>
     <div class="impbox">
       <label class="btn">Escolher arquivo<input type="file" id="impFile" accept=".obj,.glb,.gltf" hidden></label>
       <select id="impTarget"><option value="subgun">Arma · submetralhadora</option><option value="assault">Arma · fuzil de assalto</option><option value="sniper">Arma · fuzil de ferrolho</option><option value="carbine">Arma · carabina</option><option value="shotgun">Arma · escopeta</option><option value="pistol">Arma · pistola</option><option value="knife">Arma · faca</option><option value="grenade">Arma · granada</option><option value="prop">Mapmodel (cenário)</option></select>
@@ -49,6 +49,7 @@
     </div>
     <h2 class="arsh">Forja · criar arma do zero <small>Escolha a família e monte a arma: cano, coronha, carregador, mira, boca, bipé, baioneta e época (1ª/2ª Guerra ou moderna). Ela já sai texturizada e animada.</small></h2>
     <div id="forgeFams" class="forgegrid"></div>
+    <div class="handsbar"><b>Mãos das armas:</b> <select class="handsStyle"></select> <select class="handsTone"></select> <span class="muted">vale para as armas do arsenal, da Forja e as originais do AC</span></div>
     <h2 class="arsh">Arsenal da 1ª e 2ª Guerra <small>Modelos prontos, com textura e animação de fábrica. Cada um entra no lugar de uma arma do AC.</small></h2>
     <nav class="cats arstabs" id="arsenalTabs"></nav>
     <div id="arsenal" class="arsgrid"></div>
@@ -56,6 +57,9 @@
     <div class="btnrow"><button class="btn primary" id="btnScene">▦ Montar cena (diorama)</button><span class="muted">Arraste mapmodels num chão, teste a composição e exporte as linhas do mapa + uma planta com as posições.</span></div>
     <nav class="cats arstabs" id="propTabs"></nav>
     <div id="propGrid" class="arsgrid"></div>
+    <h2 class="arsh">HUDs da 1ª e 2ª Guerra <small>Ícones das armas (feitos dos modelos do arsenal), números, bússola, luneta, mira, tela de dano e escudos dos times. Substituem os arquivos de <code>packages/misc</code> e <code>packages/crosshairs</code>, com backup.</small></h2>
+    <div id="hudGrid" class="hudgrid"></div>
+    <div class="btnrow"><button class="btn sm" id="btnHudRestore">Restaurar HUD original</button><span class="muted" id="hudInfo"></span></div>
     <div class="charbox">
       <div>
         <h2 class="arsh" style="margin-top:0">Personagens · uniformes da 1ª e 2ª Guerra <small>Wehrmacht, Fallschirmjäger, Afrika Korps, US Army, USMC, britânicos, Exército Vermelho, Poilu, Tommy, Doughboy…</small></h2>
@@ -179,6 +183,14 @@
         <h3>Auto-rig</h3>
         <p class="hint">As armas originais já abrem com os grupos prontos (ferrolho, carregador, gatilho, mão…). Apagou algum? Recrie aqui.</p>
         <div class="btnrow"><button class="btn sm primary" id="btnRig">Aplicar auto-rig</button></div>
+      </section>
+      <section class="wonly handsbox">
+        <h3>Mãos e mangas</h3>
+        <p class="hint">Mãos modeladas do zero com a manga do uniforme (1ª e 2ª Guerra). Seguem a mesma animação das mãos originais.</p>
+        <div class="field"><label>Estilo</label><select class="handsStyle"></select></div>
+        <div class="field row"><label style="width:90px">Tom de pele</label><select class="handsTone"></select></div>
+        <div class="btnrow"><button class="btn sm primary btnHands">Aplicar nas mãos</button></div>
+        <p class="hint">Recarrega a arma com as mãos novas (refaz texturas e animações de fábrica). A escolha vale para as próximas armas que você abrir.</p>
       </section>
       <section class="wonly">
         <h3>Receitas da Segunda Guerra</h3>
@@ -420,6 +432,7 @@
         <h3>Arquivos</h3>
         <div class="btnrow">
           <button class="btn sm primary" id="btnZip">Pacote .zip</button>
+          <button class="btn sm" id="btnBlender" title="Peças separadas e nomeadas, UV e textura + FICHA.md com referências">Blender (.glb + ficha)</button>
           <button class="btn sm" id="btnMD3">tris_high.md3</button>
           <button class="btn sm" id="btnSkin">Skin</button>
           <button class="btn sm" id="btnCfg">md3.cfg</button>

@@ -259,3 +259,9 @@ body[data-mode="char"] .cfbox{display:none}
 .cfbox details{margin:6px 0}.cfbox summary{cursor:pointer;color:var(--muted);font-size:12px}
 .cfbox textarea,.cfbox input{width:100%}
 .cfbox .cfacct{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px;margin:6px 0;padding:6px 8px;border:1px solid var(--line,#333);border-radius:6px;font-size:12px}
+.handsbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:14px 0 4px;padding:8px 10px;border:1px solid var(--line,#333);border-radius:8px;font-size:13px}
+.handsbar select{max-width:330px}
+.hudgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;margin:8px 0}
+.hudcard{border:1px solid var(--line,#333);border-radius:10px;overflow:hidden;background:rgba(255,255,255,.02)}
+.hudcard img{width:100%;display:block;aspect-ratio:16/9;object-fit:cover}
+.hudcard .hb{padding:8px 10px}.hudcard h4{margin:0 0 4px;font-size:14px}.hudcard p{margin:0 0 8px;font-size:12px;opacity:.75}

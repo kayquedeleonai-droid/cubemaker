@@ -1,0 +1,18 @@
+{
+ "wehrmacht44": {
+  "name": "WEHRMACHT 1944",
+  "info": "Placas de aço feldgrau rebitadas, estêncil branco-osso, bússola com O (Osten), luneta ZF39 com retículo de três postes, capacete Stahlhelm M35."
+ },
+ "usarmy44": {
+  "name": "US ARMY 1944",
+  "info": "Verde-oliva com estêncil amarelado, bússola lensática com marcas verdes luminosas, luneta M73B1 de cruz fina, capacete M1."
+ },
+ "vermelho43": {
+  "name": "EXERCITO VERMELHO 1943",
+  "info": "Cáqui soviético com vermelho, estêncil, bússola com letras cirílicas (С, В, Ю, З), luneta PU de poste pontudo, capacete SSh-40."
+ },
+ "trincheira1916": {
+  "name": "TRINCHEIRA 1916",
+  "info": "Papel de campanha envelhecido com tinta sépia e costura, bússola de latão, luneta Aldis de cruz grossa, capacete Brodie."
+ }
+}

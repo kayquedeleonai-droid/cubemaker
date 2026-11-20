@@ -8,7 +8,7 @@ import { helmet } from './props.js';
 const MM = 1 / 33.5;                                   // mm → unidades do modelo do AC (1,80 m ≈ 54 unidades)
 
 // rotação ótima entre dois conjuntos de pontos (método de Horn, quaternion por iteração de potência)
-function rigid(A, Bp) {
+export function rigid(A, Bp) {
   const n = A.length / 3, ca = [0, 0, 0], cb = [0, 0, 0];
   for (let i = 0; i < n; i++) for (let k = 0; k < 3; k++) { ca[k] += A[i * 3 + k] / n; cb[k] += Bp[i * 3 + k] / n; }
   const S = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
