@@ -258,3 +258,4 @@ body.pickup .proponly #mapName,body.pickup .proponly #btnAddMap,body.pickup .pro
 body[data-mode="char"] .cfbox{display:none}
 .cfbox details{margin:6px 0}.cfbox summary{cursor:pointer;color:var(--muted);font-size:12px}
 .cfbox textarea,.cfbox input{width:100%}
+.cfbox .cfacct{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px;margin:6px 0;padding:6px 8px;border:1px solid var(--line,#333);border-radius:6px;font-size:12px}

@@ -1,10 +1,9 @@
 // CUBE MAKER → CubeForge: empacota o modelo (arquivos do jogo + LEIA-ME + licença + print) e publica no
-// repositório do site num único commit (API Git do GitHub). O Cloudflare publica o site sozinho a cada commit.
-const API = 'https://api.github.com';
+// arsenal do site pela conta OFICIAL do CubeForge (kayquedeleonai@gmail.com). A conta autoriza o CUBE MAKER
+// em "Minha conta" no site; o site guarda só o hash da chave e recusa qualquer outra conta.
+export const CF = 'https://cubeforge.kayquedeleon.app';
 export const BRAND = 'CUBEFORGE Model by Kayque Deleon';
 
-const b64 = async blob => { const u = new Uint8Array(await blob.arrayBuffer()); let s = ''; for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)); return btoa(s); };
-const b64text = t => btoa(unescape(encodeURIComponent(t)));
 export const slugify = t => t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 48) || 'modelo';
 export const fmtSize = n => n > 1048576 ? (n / 1048576).toFixed(1).replace('.', ',') + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB';
 
@@ -20,29 +19,48 @@ export function packTexts(meta) {
   return { lic, pt, en };
 }
 
-async function gh(token, method, path, body) {
-  const r = await fetch(API + path, { method, headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', ...(body ? { 'Content-Type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined });
-  if (!r.ok) { let m = ''; try { m = (await r.json()).message; } catch (e) { } throw new Error(`GitHub ${r.status}: ${m || r.statusText}${r.status === 401 ? ' (token inválido ou vencido)' : r.status === 403 || r.status === 404 ? ' (o token precisa de acesso "Contents: Read and write" a este repositório)' : ''}`); }
-  return r.status === 204 ? null : r.json();
+const ERR = {
+  no_key: 'Conecte a conta oficial do CubeForge primeiro.',
+  bad_key: 'A autorização expirou ou foi desligada (trocar a senha no site desconecta). Conecte de novo.',
+  not_official: 'Só a conta oficial do CubeForge (kayquedeleonai@gmail.com) pode publicar pelo CUBE MAKER.',
+  bad_origin: 'O site recusou o pedido (origem não autorizada).',
+  too_many: 'Limite de publicações do dia atingido. Tente amanhã.',
+  file_too_big: 'O pacote passa de 25 MB.', file_type: 'O site recusou o arquivo (tipo inválido).',
+  image_too_big: 'O print passa de 2 MB.', image_type: 'O print precisa ser PNG, JPG ou WebP.',
+  too_long: 'Nome ou descrição longos demais (nome até 80, descrição até 2000 caracteres).',
+  empty: 'Preencha o nome.', bad_category: 'Seção inválida.',
+};
+async function call(key, method, path, body) {
+  let r;
+  try { r = await fetch(`${CF}/api/${path}`, { method, headers: { Authorization: `Bearer ${key}` }, body }); }
+  catch (e) { throw new Error('Sem conexão com o CubeForge. Confira a internet e tente de novo.'); }
+  let d = null; try { d = await r.json(); } catch (e) { }
+  if (!r.ok) { const c = d && d.error; const e = new Error(ERR[c] || `CubeForge respondeu ${r.status}${c ? ' (' + c + ')' : ''}`); e.code = c; throw e; }
+  return d;
 }
-// files: [{ path, blob }] ; entry: item do arsenal ; cat: chave da seção
-export async function publishToRepo({ token, repo, branch = 'main', files, entry, cat, onStep = () => { } }) {
-  onStep('Lendo o repositório…');
-  const ref = await gh(token, 'GET', `/repos/${repo}/git/ref/heads/${branch}`), head = ref.object.sha;
-  const commit = await gh(token, 'GET', `/repos/${repo}/git/commits/${head}`);
-  // arsenal.json atual
-  const cur = await gh(token, 'GET', `/repos/${repo}/contents/public/data/arsenal.json?ref=${branch}`);
-  const data = JSON.parse(decodeURIComponent(escape(atob(cur.content.replace(/\n/g, '')))));
-  data[cat] = data[cat] || [];
-  const i = data[cat].findIndex(x => x.arquivo === entry.arquivo);
-  if (i >= 0) data[cat][i] = { ...data[cat][i], ...entry }; else data[cat].unshift(entry);
-  const tree = [];
-  for (const f of files) { onStep('Enviando ' + f.path.split('/').pop() + '…'); const blob = await gh(token, 'POST', `/repos/${repo}/git/blobs`, { content: await b64(f.blob), encoding: 'base64' }); tree.push({ path: f.path, mode: '100644', type: 'blob', sha: blob.sha }); }
-  const js = await gh(token, 'POST', `/repos/${repo}/git/blobs`, { content: b64text(JSON.stringify(data, null, 2) + '\n'), encoding: 'base64' });
-  tree.push({ path: 'public/data/arsenal.json', mode: '100644', type: 'blob', sha: js.sha });
-  onStep('Criando o commit…');
-  const t = await gh(token, 'POST', `/repos/${repo}/git/trees`, { base_tree: commit.tree.sha, tree });
-  const c = await gh(token, 'POST', `/repos/${repo}/git/commits`, { message: `Arsenal: ${i >= 0 ? 'atualiza' : 'adiciona'} ${entry.nome} (${BRAND})\n\nPublicado pelo CUBE MAKER.`, tree: t.sha, parents: [head] });
-  await gh(token, 'PATCH', `/repos/${repo}/git/refs/heads/${branch}`, { sha: c.sha });
-  return { commit: c.sha, updated: i >= 0, html: c.html_url };
+export const cfWhoami = key => call(key, 'GET', 'cubemaker/whoami');
+
+// Abre a página "Minha conta" do CubeForge numa janela; ao autorizar, ela devolve a chave por postMessage
+export function cfConnect() {
+  return new Promise((resolve, reject) => {
+    const w = window.open(`${CF}/conta?cubemaker=1`, 'cubeforge_auth', 'width=560,height=760');
+    if (!w) return reject(new Error('O navegador bloqueou a janela. Libere pop-ups para o CUBE MAKER ou cole a chave manualmente.'));
+    const done = (fn, v) => { window.removeEventListener('message', on); clearInterval(t); fn(v); };
+    const on = e => {
+      if (e.origin !== CF || !e.data || e.data.type !== 'cubeforge-key' || typeof e.data.key !== 'string') return;
+      done(resolve, e.data);
+    };
+    window.addEventListener('message', on);
+    const t = setInterval(() => { if (w.closed) setTimeout(() => done(reject, new Error('Janela fechada sem autorizar.')), 400); }, 600);
+  });
+}
+
+// Publica (ou atualiza, se já houver um item com o mesmo nome na mesma seção)
+export async function cfPublishPost({ key, category, title, description, file, fileName, image, imageName }) {
+  const fd = new FormData();
+  fd.append('category', category); fd.append('title', title); fd.append('description', description);
+  fd.append('file', file, fileName);
+  if (image) fd.append('image', image, imageName);
+  const r = await call(key, 'POST', 'cubemaker/publish', fd);
+  return { ...r, link: CF + r.url };
 }

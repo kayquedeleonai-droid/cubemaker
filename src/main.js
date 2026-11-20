@@ -7,7 +7,7 @@ import { ARSENAL, buildPreset, atlasCanvas, FORGE_FAMILIES, FORGE_OPTIONS, forge
 import { PROPS, PROP_CATS, propDef } from './props.js';
 import { readExternal, importParts, guessMat } from './importer.js';
 import { createScene } from './scene.js';
-import { packTexts, publishToRepo, slugify, fmtSize, BRAND } from './publish.js';
+import { packTexts, slugify, fmtSize, BRAND, cfWhoami, cfConnect, cfPublishPost } from './publish.js';
 import { buildGear, gearFrame, writePlayerMD2 } from './chargear.js';
 import { soundPreset, renderShot, renderReload, toOgg, play, soundNames, SR } from './sfx.js';
 import { parseMD3, parseMD2, buildMD3, buildMD2, computeIslands, parseCfg, encodeNormal } from './md3.js';
@@ -1386,20 +1386,55 @@ async function cfPackage() {
   const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
   if (blob.size > 25 * 1048576) throw new Error(`O pacote ficou com ${fmtSize(blob.size)}; o site aceita até 25 MB.`);
   const cat = k === 'arma' ? 'armas' : 'modelos';
-  const entry = { nome, autor: $('#cfAuthor').value.trim() || 'Kayque Deleon', descricao, ...(descricao_en ? { descricao_en } : {}), arquivo: `/downloads/${cat}/${slug}.zip`, imagem: `/img/arsenal/${slug}.png`, tamanho: fmtSize(blob.size), data: new Date().toISOString().slice(0, 10), licenca: k === 'arma' ? `${BRAND} · mãos de makkE · CC BY-NC-SA 2.5` : `${BRAND} · © Kayque Deleon · uso livre no AC com crédito, sem revenda` };
-  return { blob, shot, slug, cat, entry };
+  const licenca = k === 'arma' ? `${BRAND} · mãos de makkE · CC BY-NC-SA 2.5` : `${BRAND} · © ${new Date().getFullYear()} Kayque Deleon · uso livre no AC com crédito, sem revenda`;
+  return { blob, shot, slug, cat, nome, descricao, descricao_en, licenca, tamanho: fmtSize(blob.size) };
+}
+// print menor para o card do site (limite de 2 MB)
+async function cfCardImage(png) {
+  try {
+    const bmp = await createImageBitmap(png), c = document.createElement('canvas');
+    c.width = bmp.width; c.height = bmp.height; c.getContext('2d').drawImage(bmp, 0, 0);
+    const b = await new Promise(r => c.toBlob(r, 'image/webp', 0.88));
+    if (b && b.size < 2e6) return [b, 'preview.webp'];
+  } catch (e) { }
+  return png.size < 2e6 ? [png, 'preview.png'] : [null, null];
+}
+// conta oficial do CubeForge
+const cfKey = () => { try { return localStorage.getItem('cm_cf_key') || ''; } catch (e) { return ''; } };
+function cfShowAccount(u) {
+  const on = !!u;
+  $('#cfWho').innerHTML = on ? `Conta: <b>@${u.username}</b> (oficial do CubeForge)` : 'Conta oficial do CubeForge: <b>não conectada</b>';
+  $('#cfConnect').textContent = on ? 'Conectar de novo' : 'Conectar conta oficial';
+  $('#cfLogout').hidden = !on;
+  $('#cfPublish').disabled = !on;
+}
+async function cfUseKey(key, user) {
+  const st = $('#cfStatus');
+  try {
+    const r = user ? { user } : await cfWhoami(key);
+    try { localStorage.setItem('cm_cf_key', key); } catch (e) { }
+    cfShowAccount(r.user); st.textContent = ''; return true;
+  } catch (e) {
+    if (e.code === 'bad_key' || e.code === 'not_official' || e.code === 'no_key') { try { localStorage.removeItem('cm_cf_key'); } catch (x) { } cfShowAccount(null); }
+    st.textContent = '✖ ' + e.message; return false;
+  }
 }
 async function cfPublish() {
-  const st = $('#cfStatus'), token = $('#cfToken').value.trim(), repo = $('#cfRepo').value.trim();
+  const st = $('#cfStatus'), key = cfKey();
   try {
-    if (!token) { $('.cfbox details').open = true; throw new Error('Cole o token do GitHub (Conexão com o GitHub)'); }
-    try { localStorage.setItem('cm_gh_token', token); localStorage.setItem('cm_gh_repo', repo); localStorage.setItem('cm_cf_author', $('#cfAuthor').value); } catch (e) { }
+    if (!key) throw new Error('Conecte a conta oficial do CubeForge primeiro.');
     st.textContent = 'Montando o pacote…';
     const P = await cfPackage();
-    const r = await publishToRepo({ token, repo, files: [{ path: `public/downloads/${P.cat}/${P.slug}.zip`, blob: P.blob }, { path: `public/img/arsenal/${P.slug}.png`, blob: P.shot }], entry: P.entry, cat: P.cat, onStep: t => st.textContent = t });
-    st.innerHTML = `✔ ${r.updated ? 'Atualizado' : 'Publicado'}: <b>${P.entry.nome}</b> (${P.entry.tamanho}). O site atualiza em 1–2 min: <a href="https://cubeforge.kayquedeleon.app/arsenal.html#${P.cat}" target="_blank" rel="noopener">abrir o arsenal</a> · <a href="${r.html}" target="_blank" rel="noopener">ver o commit</a>`;
+    const [img, imgName] = await cfCardImage(P.shot);
+    const description = [P.descricao, P.descricao_en ? 'EN: ' + P.descricao_en : '', P.licenca, 'Como instalar: veja o LEIA-ME.txt dentro do zip (README_EN.txt em inglês).'].filter(Boolean).join('\n\n').slice(0, 2000);
+    st.textContent = `Enviando ${P.tamanho}…`;
+    const r = await cfPublishPost({ key, category: P.cat, title: P.nome.slice(0, 80), description, file: P.blob, fileName: `CUBEFORGE_${P.slug}.zip`, image: img, imageName: imgName });
+    st.innerHTML = `✔ ${r.updated ? 'Atualizado' : 'Publicado'} por <b>@${r.user}</b>: <b>${P.nome}</b> (${P.tamanho}). Já está no ar: <a href="${r.link}" target="_blank" rel="noopener">abrir no CubeForge</a>`;
     toast('Publicado no CubeForge', 'ok');
-  } catch (e) { console.error(e); st.textContent = '✖ ' + e.message; toast(e.message, 'err'); }
+  } catch (e) {
+    console.error(e); st.textContent = '✖ ' + e.message; toast(e.message, 'err');
+    if (e.code === 'bad_key' || e.code === 'not_official') { try { localStorage.removeItem('cm_cf_key'); } catch (x) { } cfShowAccount(null); }
+  }
 }
 
 // ================================================================ ESTÚDIO DE SOM
@@ -2796,9 +2831,13 @@ function bindUI() {
   $('#charKit').onchange = e => { if (!S.char) return; S.char.kitOn = e.target.checked; S.char.kit = e.target.checked; S.modifiedSkins.add(0); composite(0); };
   $('#charGear').onchange = e => { if (!S.char) return; S.char.gear3d = e.target.checked; refreshGear(); updateAll(); };
   $('#charHelmet').onchange = e => { if (!S.char) return; S.char.helmet3d = e.target.value || null; refreshGear(); updateAll(); };
-  try { $('#cfToken').value = localStorage.getItem('cm_gh_token') || ''; $('#cfRepo').value = localStorage.getItem('cm_gh_repo') || $('#cfRepo').value; $('#cfAuthor').value = localStorage.getItem('cm_cf_author') || $('#cfAuthor').value; } catch (e) { }
+  try { localStorage.removeItem('cm_gh_token'); localStorage.removeItem('cm_gh_repo'); localStorage.removeItem('cm_cf_author'); } catch (e) { }
+  cfShowAccount(null); if (cfKey()) cfUseKey(cfKey());
+  $('#cfConnect').onclick = async () => { $('#cfStatus').textContent = 'Entre com a conta oficial na janela do CubeForge e clique em “Autorizar o CUBE MAKER”…'; try { const d = await cfConnect(); if (await cfUseKey(d.key, d.user)) toast('CUBE MAKER conectado ao CubeForge', 'ok'); } catch (e) { $('#cfStatus').textContent = '✖ ' + e.message; } };
+  $('#cfLogout').onclick = () => { try { localStorage.removeItem('cm_cf_key'); } catch (e) { } cfShowAccount(null); $('#cfStatus').textContent = 'Desconectado neste navegador. Para desligar a chave de vez, use “Desconectar” em Minha conta no CubeForge.'; };
+  $('#cfKeySave').onclick = () => { const k = $('#cfKeyIn').value.trim(); if (k) cfUseKey(k).then(ok => { if (ok) { $('#cfKeyIn').value = ''; $('.cfbox details').open = false; } }); };
   $('#cfPublish').onclick = cfPublish;
-  $('#cfZip').onclick = async () => { try { const P = await cfPackage(); download(`CUBEFORGE_${P.slug}.zip`, P.blob); $('#cfStatus').textContent = `Pacote de ${P.entry.tamanho} baixado.`; } catch (e) { toast(e.message, 'err'); } };
+  $('#cfZip').onclick = async () => { try { const P = await cfPackage(); download(`CUBEFORGE_${P.slug}.zip`, P.blob); $('#cfStatus').textContent = `Pacote de ${P.tamanho} baixado.`; } catch (e) { toast(e.message, 'err'); } };
   $('#sndShot').onclick = async () => { if (!S.sound) return toast('Abra uma arma primeiro', 'warn'); play((await soundPCM()).shot); };
   $('#sndReload').onclick = async () => { if (!S.sound) return toast('Abra uma arma primeiro', 'warn'); play((await soundPCM()).rel); };
   $('#sndReset').onclick = () => { if (S.presetDef) { S.sound.p = soundPreset(S.presetDef.slot, S.presetDef.id); buildSoundUI(); } };
