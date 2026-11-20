@@ -265,3 +265,4 @@ body[data-mode="char"] .cfbox{display:none}
 .hudcard{border:1px solid var(--line,#333);border-radius:10px;overflow:hidden;background:rgba(255,255,255,.02)}
 .hudcard img{width:100%;display:block;aspect-ratio:16/9;object-fit:cover}
 .hudcard .hb{padding:8px 10px}.hudcard h4{margin:0 0 4px;font-size:14px}.hudcard p{margin:0 0 8px;font-size:12px;opacity:.75}
+.unigrp{grid-column:1/-1;font:600 11px/1.2 var(--mono,monospace);letter-spacing:.06em;text-transform:uppercase;opacity:.7;margin:10px 0 2px}

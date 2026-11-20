@@ -209,6 +209,7 @@ export function parseMD2(buf) {
   }
   const nv = vXYZ.length, S = { name: 'body', flags: 0, nv, ntri: nTris, shaders: [], tris: new Int32Array(tris), st: new Float32Array(nv * 2), pos: [], nrm: [], nraw: [] };
   vST.forEach((si, i) => { S.st[i * 2] = st[si][0]; S.st[i * 2 + 1] = st[si][1]; });
+  S.xyz = Int32Array.from(vXYZ);
   const frames = [];
   for (let f = 0; f < nFrames; f++) {
     const o = ofsFrames + f * frameSize;

@@ -2,7 +2,7 @@
 // As peças acompanham a cabeça e o tronco em todos os quadros do modelo MD2 (encaixe rígido por Kabsch/Horn),
 // e as UVs são projetadas na pele do corpo logo abaixo, então pegam a mesma pintura da skin.
 import * as THREE from 'three';
-import { partGeometry, B, C, L, PI } from './geo.js';
+import { partGeometry, B, C, L, PI, SP } from './geo.js';
 import { helmet } from './props.js';
 
 const MM = 1 / 33.5;                                   // mm → unidades do modelo do AC (1,80 m ≈ 54 unidades)
@@ -37,15 +37,60 @@ function hitBody(s, o, d) {
   return best;
 }
 // UV do ponto do corpo mais próximo (projeção nos triângulos do quadro 0)
-function nearestUV(s, p) {
+function nearestUV(s, p, zmin = -1e9) {
   const P = s.pos[0], T = s.tris, st = s.st; let bd = 1e9, uv = [0, 0];
   const tri = new THREE.Triangle(), cp = new THREE.Vector3(), bc = new THREE.Vector3(), A = new THREE.Vector3(), Bv = new THREE.Vector3(), Cv = new THREE.Vector3();
   for (let t = 0; t < T.length; t += 3) {
-    A.fromArray(P, T[t] * 3); Bv.fromArray(P, T[t + 1] * 3); Cv.fromArray(P, T[t + 2] * 3); tri.set(A, Bv, Cv); tri.closestPointToPoint(p, cp);
+    A.fromArray(P, T[t] * 3); Bv.fromArray(P, T[t + 1] * 3); Cv.fromArray(P, T[t + 2] * 3); if (typeof zmin === 'function' ? !zmin(A, Bv, Cv) : Math.min(A.z, Bv.z, Cv.z) < zmin) continue; tri.set(A, Bv, Cv); tri.closestPointToPoint(p, cp);
     const d = cp.distanceToSquared(p); if (d >= bd) continue; bd = d; tri.getBarycoord(cp, bc);
     uv = [st[T[t] * 2] * bc.x + st[T[t + 1] * 2] * bc.y + st[T[t + 2] * 2] * bc.z, st[T[t] * 2 + 1] * bc.x + st[T[t + 1] * 2 + 1] * bc.y + st[T[t + 2] * 2 + 1] * bc.z];
   }
   return uv;
+}
+
+// ---- coberturas de cabeça novas (mm no referencial da cabeça: meia-largura 100, z = 0 na sobrancelha, frente = +X)
+const HELMETS = { stahl: 'stahl', m1: 'm1', brodie: 'brodie', adrian: 'adrian', ssh40: 'ssh40', m33plume: 'm1' };
+function dome(H, mat, z0, extra = 0, seg = 16) {
+  const cx = (H.fx + H.bx) / 2, rx = (H.fx - H.bx) / 2 / 108, T = H.top + extra;
+  return L(null, mat, [[0, T], [52, T - 8], [86, T * 0.7], [106, T * 0.36], [112 + extra * 0.2, Math.max(z0, 6)], [112 + extra * 0.2, z0], [0, z0]], [cx, 0, 0], { axis: 'z', seg, sc: [rx * 1.04, 1.04, 1] });
+}
+function headgear(k, kit, H) {
+  const m = kit.helmetMat || 'couroMarrom', cx = (H.fx + H.bx) / 2;
+  switch (k) {
+    case 'flycap': return [dome(H, m, -6, 8), ...[-1, 1].map(sd => B(null, m, [90, 22, 120], [cx - 4, sd * 112, -50], { bev: 9 })), B(null, m, [18, 150, 14], [cx + 5, 0, -112], { bev: 5 })];
+    case 'tanker': return [dome(H, m, -4, 10), ...[-36, 0, 36].map(y => B(null, m, [(H.fx - H.bx) * 0.86, 22, 26], [cx, y, H.top + 8], { bev: 9 })), ...[-1, 1].map(sd => C(null, 'couroPreto', 44, 30, [cx - 6, sd * 116, -30], { axis: 'y', seg: 12 }))];
+    case 'beret': return [L(null, m, [[0, 40], [86, 36], [128, 18], [134, 6], [104, 0], [0, 0]], [cx - 10, 14, H.top - 34], { axis: 'z', seg: 16, sc: [1.12, 1, 1], rot: [-14, 0, 0] }), B(null, 'latao', [8, 30, 36], [H.fx * 0.82, -48, H.top - 30], { bev: 3 })];
+    case 'sidecap': return [B(null, m, [(H.fx - H.bx) * 1.02, 74, 64], [cx, 10, H.top - 14], { bev: 20 }), B(null, m, [(H.fx - H.bx) * 1.04, 84, 26], [cx, 10, H.top - 40], { bev: 8 })];
+    case 'bergmutze': return [L(null, m, [[0, H.top + 6], [90, H.top], [114, H.top - 30], [116, 10], [0, 10]], [cx, 0, 0], { axis: 'z', seg: 16, sc: [(H.fx - H.bx) / 216 * 1.04, 1.04, 1] }), B(null, m, [70, 170, 10], [H.fx + 22, 0, 16], { bev: 4, rot: [0, -12, 0] })];
+    case 'japcap': return [L(null, m, [[0, H.top + 2], [96, H.top - 4], [116, H.top - 40], [118, 8], [0, 8]], [cx, 0, 0], { axis: 'z', seg: 16, sc: [(H.fx - H.bx) / 216 * 1.04, 1.04, 1] }), B(null, m, [64, 160, 10], [H.fx + 20, 0, 12], { bev: 4, rot: [0, -10, 0] }),
+      B(null, m, [10, 170, 170], [H.bx - 6, 0, -70], { bev: 4 }), ...[-1, 1].map(sd => B(null, m, [110, 10, 150], [cx - 40, sd * 120, -60], { bev: 4 }))];
+    case 'furhat': return [dome(H, m, 0, 34, 16), ...[-1, 1].map(sd => B(null, m, [96, 26, 130], [cx - 6, sd * 124, -40], { bev: 12 })), B(null, m, [26, 200, 70], [H.fx + 6, 0, 36], { bev: 12 })];
+    case 'hood': {
+      const out = [dome(H, m, -16, 12, 16)], strips = kit.strips || ['sacoAreia', 'lonaVerde'];
+      for (let i = 0; i < 26; i++) {
+        const a = Math.PI * 0.4 + (i / 25) * Math.PI * 1.2 + ((i * 13) % 7) * 0.03, r = 112, h = 150 + ((i * 37) % 90), tilt = 22 + (i * 29) % 16;
+        const z0 = H.top * (0.15 + ((i * 17) % 10) * 0.05);
+        // tira de juta pendurada: presa no capuz e caindo para fora, sobre os ombros
+        out.push(B(null, strips[i % strips.length], [5, 14 + (i % 3) * 5, h], [cx + Math.cos(a) * (r + 12) * 1.15, Math.sin(a) * (r + 12), z0 - h / 2], { rot: [Math.sin(a) * tilt, -Math.cos(a) * tilt, ((i * 47) % 50) - 25] }));
+      }
+      return out;
+    }
+  }
+  return [];
+}
+function goggles(H, kit) {
+  const z = kit.helmet === 'tanker' || kit.helmet === 'flycap' ? 44 : 20, x = H.fx * 0.9;
+  return [...[-1, 1].map(sd => C(null, 'acoGasto', 31, 24, [x + 4, sd * 40, z], { axis: 'x', seg: 12 })), ...[-1, 1].map(sd => C(null, 'vidro', 25, 6, [x + 18, sd * 40, z], { axis: 'x', seg: 12 })),
+    L(null, kit.gogStrap || 'couroMarrom', [[0, z - 9], [120, z - 9], [120, z + 9], [0, z + 9]], [(H.fx + H.bx) / 2, 0, 0], { axis: 'z', seg: 16, sc: [(H.fx - H.bx) / 216 * 1.05, 1.05, 1] })];
+}
+function headset(H) {
+  const cx = (H.fx + H.bx) / 2;
+  return [B(null, 'couroPreto', [18, 236, 12], [cx - 6, 0, H.top + 4], { bev: 5 }), ...[-1, 1].map(sd => C(null, 'couroPreto', 40, 24, [cx - 6, sd * 116, -24], { axis: 'y', seg: 12 })), ...[-1, 1].map(sd => B(null, 'couroPreto', [12, 10, 120], [cx - 6, sd * 116, H.top - 70], { bev: 3 }))];
+}
+function plume(H) {
+  const out = [];
+  for (let i = 0; i < 8; i++) out.push(L(null, 'preto', [[0, 0], [18, 24], [12, 190], [0, 230]], [H.bx * 0.1 - i * 5, 128 + (i % 3) * 6, 78 - i * 3], { axis: 'z', seg: 5, rot: [112 + (i % 4) * 7, 0, 196 + i * 5], ord: 'ZXY' }));
+  return out;
 }
 
 // regions: { head: [ilhas], torso: [ilhas] }; kit: o mesmo "kit" do uniforme; opts.helmet força um modelo de capacete
@@ -56,13 +101,24 @@ export function buildGear(model, regions, kit, opts = {}) {
   const ext = vs => { const mn = [1e9, 1e9, 1e9], mx = [-1e9, -1e9, -1e9]; vs.forEach(v => { for (let k = 0; k < 3; k++) { mn[k] = Math.min(mn[k], P0[v * 3 + k]); mx[k] = Math.max(mx[k], P0[v * 3 + k]); } }); return { mn, mx }; };
   const hc = avg(headV), he = ext(headV), tc = avg(torsoV), te = ext(torsoV);
   const parts = [];                                    // { parts (DSL em mm, origem local), M (frame0, unidades), bone }
-  const put = (dsl, at, rotZ, bone, scale = MM) => parts.push({ dsl, M: new THREE.Matrix4().compose(new THREE.Vector3(...at), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, rotZ || 0)), new THREE.Vector3(scale, scale, scale)), bone });
+  const put = (dsl, at, rotZ, bone, scale = MM, zmin = -1e9) => parts.push({ zmin, dsl, M: new THREE.Matrix4().compose(new THREE.Vector3(...at), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, rotZ || 0)), new THREE.Vector3(scale, scale, scale)), bone });
   // capacete: aro acima dos olhos, centralizado na cabeça, frente = +X
   const hk = opts.helmet || kit.helmet;
-  if (hk && hk !== 'cap' && hk !== 'none') {
-    const kind = { stahl: 'stahl', m1: 'm1', brodie: 'brodie', adrian: 'adrian', ssh40: 'ssh40' }[hk] || 'm1';
+  if (hk && (HELMETS[hk] || hk === 'm33plume')) {
+    const kind = HELMETS[hk] || 'm1';
     const rimZ = he.mx[2] - 4.6, sc = ((he.mx[1] - he.mn[1]) / 2 + 0.7) / 160;
-    put(helmet(kind, kit.helmetMat || 'oliva'), [hc[0] - 0.2, hc[1], rimZ], Math.PI / 2, 'head', sc);
+    put(helmet(kind, kit.helmetMat || 'oliva'), [hc[0] - 0.2, hc[1], rimZ], Math.PI / 2, 'head', sc, he.mx[2] - 4.0);
+  }
+  // cobertura de cabeça nova (gorros, boinas, quepes, capuz) — construída no referencial da cabeça (mm, meia-largura = 100, frente = +X)
+  {
+    const hr = (he.mx[1] - he.mn[1]) / 2, sc = hr / 100, rim = he.mx[2] - 4.6;
+    const H = { fx: (he.mx[0] - hc[0]) / sc, bx: (he.mn[0] - hc[0]) / sc, top: (he.mx[2] - rim) / sc };
+    const dsl = headgear(hk, kit, H);
+    const NB = { flycap: 5.4, tanker: 5.2, beret: 1.9, sidecap: 2.1, bergmutze: 3.0, japcap: 3.2, furhat: 4.1, hood: 6.8 }[hk];
+    if (dsl.length) put(dsl, [hc[0], hc[1], rim], 0, 'head', sc, NB ? he.mx[2] - NB + 0.5 : -1e9);
+    if (kit.goggles) put(goggles(H, kit), [hc[0], hc[1], rim], 0, 'head', sc);
+    if (kit.headset) put(headset(H), [hc[0], hc[1], rim], 0, 'head', sc);
+    if (hk === 'm33plume') put(plume(H), [hc[0], hc[1], rim], 0, 'head', sc, (A, B2, C2) => Math.min(A.z, B2.z, C2.z) > rim && (A.y + B2.y + C2.y) / 3 - hc[1] > 2.0 && (A.x + B2.x + C2.x) / 3 - hc[0] < 0.7);
   }
   const zb = te.mn[2] + 1.3, front = new THREE.Vector3(-1, 0, 0), backDir = new THREE.Vector3(1, 0, 0);
   const onBody = (y, z, dir) => hitBody(s, new THREE.Vector3(dir.x < 0 ? 40 : -40, y, z), dir);
@@ -76,18 +132,41 @@ export function buildGear(model, regions, kit, opts = {}) {
   }
   // mochila / bornal nas costas
   if (kit.pack) {
-    const sz = { bread: [90, 240, 200], haversack: [110, 280, 380], tornister: [130, 320, 330], musette: [90, 260, 220], sidor: [140, 300, 280], small: [110, 280, 250] }[kit.pack] || [100, 260, 260];
+    const sz = { bread: [90, 240, 200], haversack: [110, 280, 380], tornister: [130, 320, 330], musette: [90, 260, 220], sidor: [140, 300, 280], small: [110, 280, 250], radio: [130, 250, 340], rucksack: [170, 330, 330], flamer: [150, 300, 420] }[kit.pack] || [100, 260, 260];
     const z = kit.pack === 'bread' || kit.pack === 'musette' ? zb + 2.6 : (te.mx[2] + zb) / 2 + 1, y = kit.pack === 'bread' || kit.pack === 'musette' ? tc[1] - 2.6 : tc[1];
     const p = onBody(y, z, backDir);
     if (p) {
       const dsl = [B(null, kit.packMat || 'lona', sz, [0, 0, 0], { bev: 28 })];
       if (kit.pack === 'tornister') dsl.push(C(null, 'feldgrauEsc', 55, sz[1] + 40, [0, 0, sz[2] / 2 + 40], { axis: 'x', seg: 10 }));
+      if (kit.pack === 'radio') {                           // rádio SCR-300: caixa + antena
+        dsl.push(B(null, kit.packMat || 'oliva', [sz[0] * 0.6, 60, 40], [-sz[0] * 0.1, sz[1] * 0.3, sz[2] / 2 + 20], { bev: 8 }));
+        dsl.push(C(null, 'preto', 7, 1150, [-10, -sz[1] * 0.35, sz[2] / 2 + 575], { axis: 'z', seg: 6 }));
+        dsl.push(SP(null, 'preto', [12, 12, 12], [-10, -sz[1] * 0.35, sz[2] / 2 + 1150], { seg: [6, 4] }));
+      }
+      if (kit.pack === 'flamer') {                          // lança-chamas: dois tanques + garrafa de gás
+        dsl.length = 0;
+        for (const sy of [-1, 1]) {
+          dsl.push(C(null, kit.packMat || 'oliva', 64, sz[2], [0, sy * 72, 0], { axis: 'z', seg: 12 }));
+          dsl.push(SP(null, kit.packMat || 'oliva', [64, 64, 34], [0, sy * 72, sz[2] / 2], { seg: [10, 5] }));
+          dsl.push(SP(null, kit.packMat || 'oliva', [64, 64, 34], [0, sy * 72, -sz[2] / 2], { seg: [10, 5] }));
+        }
+        dsl.push(SP(null, 'acoGasto', [46, 46, 46], [-30, 0, sz[2] * 0.3], { seg: [10, 7] }));
+        dsl.push(B(null, 'couroPreto', [30, 240, 26], [-50, 0, sz[2] * 0.15], { bev: 6 }));
+      }
+      if (kit.pack === 'rucksack') dsl.push(B(null, kit.packMat || 'lona', [sz[0] * 0.8, sz[1] * 0.9, 70], [-10, 0, -sz[2] / 2 + 10], { bev: 18 }), B(null, 'couroMarrom', [40, 60, 120], [-sz[0] / 2 - 10, sz[1] * 0.3, -40], { bev: 10 }), B(null, 'couroMarrom', [40, 60, 120], [-sz[0] / 2 - 10, -sz[1] * 0.3, -40], { bev: 10 }));
       put(dsl, [p.x - sz[0] * MM / 2 - 0.2, p.y, p.z], 0, 'torso');
     }
   }
   // cantil no quadril e máscara de gás nas costas
   if (kit.canteen) { const p = onBody(tc[1] + 4.6, zb - 1.4, front.clone().add(new THREE.Vector3(0, -1.2, 0)).normalize()); if (p) put([L(null, kit.canteenMat || 'couroMarrom', [[0, 0], [70, 0], [85, 20], [85, 160], [70, 180], [20, 190], [20, 215], [0, 215]], [0, 0, -100], { axis: 'z', seg: 12, sc: [1, 0.55, 1] })], [p.x, p.y + 0.6, p.z], 0, 'torso'); }
   if (kit.gasmask) { const p = onBody(tc[1] + 2.3, zb + 2.2, backDir); if (p) put([L(null, 'feldgrau', [[0, 0], [52, 0], [55, 8], [55, 250], [50, 260], [0, 262]], [0, 0, -130], { axis: 'z', seg: 14 })], [p.x - 1.6, p.y, p.z], 0, 'torso'); }
+  // colete salva-vidas (Mae West): gola inflada + almofadas no peito
+  if (kit.maewest) {
+    const ring = []; for (let k = 0; k <= 10; k++) { const t = k / 10 * Math.PI * 2; ring.push([150 + 42 * Math.cos(t), 42 * Math.sin(t)]); }
+    const nk = torsoV.filter(v => P0[v * 3 + 2] > te.mx[2] - 1.6), nc = avg(nk.length ? nk : torsoV);
+    put([L(null, kit.maewest, ring, [0, 0, 0], { axis: 'z', seg: 14, sc: [0.92, 1.0, 1] })], [nc[0], nc[1], te.mx[2] - 0.7], 0, 'torso');
+    for (const sd of [-1, 1]) { const p = onBody(tc[1] + sd * 2.1, te.mx[2] - 4.2, front); if (p) put([B(null, kit.maewest, [52, 105, 170], [0, 0, 0], { bev: 24 })], [p.x + 0.7, p.y, p.z], 0, 'torso'); }
+  }
   // malha das peças no quadro 0 + UV projetada no corpo
   const pos = [], uv = [], tris = [], bone = [], mat = [];
   parts.forEach(pt => {
@@ -95,7 +174,7 @@ export function buildGear(model, regions, kit, opts = {}) {
       const lo = { ...d, hard: true, seg: d.kind === 'lathe' ? 12 : d.kind === 'sph' ? [8, 6] : d.kind === 'cyl' ? 10 : d.seg };   // leve: o MD2 do AC tem limite de vértices
       const g = partGeometry(lo, true); g.applyMatrix4(pt.M);
       const base = pos.length / 3, A = g.attributes.position;
-      for (let i = 0; i < A.count; i++) { const v = new THREE.Vector3(A.getX(i), A.getY(i), A.getZ(i)); pos.push(v.x, v.y, v.z); uv.push(...nearestUV(s, v)); bone.push(pt.bone); }
+      for (let i = 0; i < A.count; i++) { const v = new THREE.Vector3(A.getX(i), A.getY(i), A.getZ(i)); pos.push(v.x, v.y, v.z); uv.push(...nearestUV(s, v, pt.zmin)); bone.push(pt.bone); }
       const I = g.index.array; for (let t = 0; t < I.length; t += 3) tris.push(base + I[t], base + I[t + 2], base + I[t + 1]);   // ordem do MD2
       mat.push(d.mat);
     });
@@ -113,7 +192,7 @@ export function gearFrame(G, f) {
 }
 
 // grava um tris.md2 novo: o modelo original do AC (mesma numeração de vértices, quadros e nomes) + as peças
-export function writePlayerMD2(origBuf, G) {
+export function writePlayerMD2(origBuf, G, bulk = null) {
   const dv0 = new DataView(origBuf), I = o => dv0.getInt32(o, true);
   const skinW = I(8), skinH = I(12), fs0 = I(16), nSk = I(20), nX = I(24), nSt = I(28), nT = I(32), nF = I(40), oSk = I(44), oSt = I(48), oT = I(52), oF = I(56);
   const gN = G.bone.length, gT = G.tris.length / 3, X = nX + gN, ST = nSt + gN, TT = nT + gT;
@@ -122,7 +201,7 @@ export function writePlayerMD2(origBuf, G) {
   for (let f = 0; f < nF; f++) {
     const o = oF + f * fs0, sc = [0, 1, 2].map(k => dv0.getFloat32(o + k * 4, true)), tr = [0, 1, 2].map(k => dv0.getFloat32(o + 12 + k * 4, true));
     const name = new Uint8Array(origBuf, o + 24, 16).slice(), P = new Float32Array(X * 3);
-    for (let i = 0; i < nX; i++) for (let k = 0; k < 3; k++) P[i * 3 + k] = dv0.getUint8(o + 40 + i * 4 + k) * sc[k] + tr[k];
+    for (let i = 0; i < nX; i++) for (let k = 0; k < 3; k++) P[i * 3 + k] = dv0.getUint8(o + 40 + i * 4 + k) * sc[k] + tr[k] + (bulk && bulk[f] && i * 3 + k < bulk[f].length ? bulk[f][i * 3 + k] : 0);
     P.set(gearFrame(G, f), nX * 3); frames.push({ name, P });
   }
   const tris = []; for (let t = 0; t < nT; t++) { const o = oT + t * 12; tris.push([[0, 1, 2].map(k => dv0.getUint16(o + k * 2, true)), [0, 1, 2].map(k => dv0.getUint16(o + 6 + k * 2, true))]); }

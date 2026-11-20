@@ -19,7 +19,7 @@ import { MATS, MAT_ORDER, fbm, TEX, CATS, registerImageTexture } from './materia
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const D2R = Math.PI / 180;
-const VERSION = '1.7.0';
+const VERSION = '1.8.0';
 
 // ---------------------------------------------------------------- estado
 let model = null;          // MD3 parseado
@@ -286,12 +286,13 @@ function composite(si) {
   const matOf = []; mats.forEach((k, isl) => matOf[isl] = MATS[k]);
   const C = G.contrast, B = G.bright * 255, muz = model.tagNames.length ? muzzle() : null, tk = S.texK || 1;
   KIT = S.mode === 'char' && S.char && S.char.kit && si === 0 ? kitSetup(sk) : null;
+  const HQ = S.mode === 'char' && S.char && S.char.hq && si === 0 ? (charAO(sk), (i, isl) => hqShade(sk, i, isl)) : null;
   for (let y = 0, i = 0; y < h; y++) for (let x = 0; x < w; x++, i++) {
     const j = i * 4; let r = O[j], g = O[j + 1], b = O[j + 2];
     const isl = sk.id[i], m = isl >= 0 ? matOf[isl] : null;
     if (m) {
       const L = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-      let k = Math.pow(Math.min(L / sk.mean[isl], 3.2), 0.85); k = 1 + (k - 1) * (G.detail ?? 1);
+      let k = HQ ? HQ(i, isl) : Math.pow(Math.min(L / sk.mean[isl], 3.2), 0.85); if (!HQ) k = 1 + (k - 1) * (G.detail ?? 1);
       if (m.tex) { const c = TEX[m.tex](x * tk, y * tk, m); k *= 0.95 + 0.1 * sk.fine[i]; r = c[0] * k; g = c[1] * k; b = c[2] * k; }
       else { k *= patternFactor(m, sk, i, x * tk, y * tk, isl); r = m.c[0] * k; g = m.c[1] * k; b = m.c[2] * k; }
       if (G.wear > 0 && m.wear) {                       // bordas gastas mostrando metal claro / madeira gasta
@@ -305,16 +306,17 @@ function composite(si) {
     }
     if (KIT && si === 0 && isl >= 0) {                  // equipamento pintado do soldado (cinto, suspensórios, bolsos, capacete…)
       const f = kitAt(sk, i, isl, O[j], O[j + 1], O[j + 2]);
+      if (!f && HQ && REG_OF[isl] === 'rosto') { const c = facePaint(sk, x, y, isl, KIT.K), a = HQ(i, isl); r = c[0] * (0.55 + 0.45 * a); g = c[1] * (0.55 + 0.45 * a); b = c[2] * (0.55 + 0.45 * a); }
       if (f) {
         const mm = MATS[f[0]] || MATS.lona, L = (0.299 * O[j] + 0.587 * O[j + 1] + 0.114 * O[j + 2]) / 255;
-        let kk = Math.pow(Math.min(L / sk.mean[isl], 3), 0.8); kk = (f[3] ? 0.92 + 0.16 * sk.fine[i] : 1 + (kk - 1) * 0.5) * f[1];
+        let kk = Math.pow(Math.min(L / sk.mean[isl], 3), 0.8); kk = (HQ ? HQ(i, isl) * (f[3] ? 1.05 : 1) : f[3] ? 0.92 + 0.16 * sk.fine[i] : 1 + (kk - 1) * 0.5) * f[1];
         let c; if (mm.tex) c = TEX[mm.tex](x * tk, y * tk, mm); else { const q = patternFactor(mm, sk, i, x * tk, y * tk, isl); c = [mm.c[0] * q, mm.c[1] * q, mm.c[2] * q]; }
         const a = f[2] ?? 1; r += (c[0] * kk - r) * a; g += (c[1] * kk - g) * a; b += (c[2] * kk - b) * a;
       }
     }
     if (isl >= 0) {                                     // camadas procedurais (estilo Substance)
       const F = S.fx, L0 = (0.299 * O[j] + 0.587 * O[j + 1] + 0.114 * O[j + 2]) / 255;
-      if (F.cavity > 0) { const c = clamp((0.8 - L0 / sk.mean[isl]) * 1.6, 0, 1) * F.cavity; r = r * (1 - 0.6 * c) + 16 * c; g = g * (1 - 0.6 * c) + 12 * c; b = b * (1 - 0.6 * c) + 8 * c; }
+      if (F.cavity > 0 && !HQ) { const c = clamp((0.8 - L0 / sk.mean[isl]) * 1.6, 0, 1) * F.cavity; r = r * (1 - 0.6 * c) + 16 * c; g = g * (1 - 0.6 * c) + 12 * c; b = b * (1 - 0.6 * c) + 8 * c; }
       if (F.scratches > 0 && sk.scr[i] > 1 - F.scratches * 0.32) { const t = (0.3 + 0.35 * sk.scr[i]) * Math.min(1, F.scratches * 2.5); r += (200 - r) * t; g += (198 - g) * t; b += (190 - b) * t; }
       if (F.rust > 0) { const t = clamp((sk.noise2[i] * (0.7 + 0.6 * sk.fine[i]) - (1 - F.rust * 0.6)) * 4, 0, 1); if (t > 0) { const q = 0.7 + 0.5 * sk.fine[i]; r += (128 * q - r) * t; g += (60 * q - g) * t; b += (26 * q - b) * t; } }
       if (F.dust > 0) { const nz = sk.nrm3[i * 3 + 2], t = clamp(nz * 1.3, 0, 1) * F.dust * (0.25 + 0.75 * Math.pow(sk.noise[i], 1.5)) * 0.85; r += (156 - r) * t; g += (138 - g) * t; b += (106 - b) * t; }
@@ -337,6 +339,19 @@ function composite(si) {
     }
     r = (r - 128) * C + 128 + B; g = (g - 128) * C + 128 + B; b = (b - 128) * C + 128 + B;
     D[j] = r; D[j + 1] = g; D[j + 2] = b; D[j + 3] = 255;
+  }
+  if (S.mode === 'char' && si === 0) {                  // frestas sem ilha (UV degenerada no pescoço): puxa a cor vizinha
+    let cur = new Uint8Array(w * h); for (let i = 0; i < w * h; i++) cur[i] = sk.id[i] >= 0 ? 1 : 0;
+    for (let pass = 0; pass < 48; pass++) {
+      const nxt = cur.slice();
+      for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) {
+        const i = y * w + x; if (cur[i]) continue;
+        let r = 0, g = 0, b = 0, n = 0;
+        for (const j of [i - 1, i + 1, i - w, i + w]) if (cur[j]) { r += D[j * 4]; g += D[j * 4 + 1]; b += D[j * 4 + 2]; n++; }
+        if (n) { D[i * 4] = r / n; D[i * 4 + 1] = g / n; D[i * 4 + 2] = b / n; nxt[i] = 1; }
+      }
+      cur = nxt;
+    }
   }
   ctx.putImageData(out, 0, 0);
   refreshResult(si);
@@ -1325,7 +1340,7 @@ function skinPath(si) {
 async function packageFiles() {
   if (S.mode === 'char') {
     const out = [{ path: charTarget(), data: await skinBlob(0) }, { path: 'packages/models/playermodels/custom/CUBEMAKER_LEIA-ME.txt', data: new Blob([charCredits()]) }];
-    if (S.char.gear3d && GEAR && S.charMD2) out.push({ path: 'packages/models/playermodels/tris.md2', data: new Blob([await writePlayerMD2(S.charMD2, GEAR)]) });
+    if (S.char.gear3d && GEAR && S.charMD2) out.push({ path: 'packages/models/playermodels/tris.md2', data: new Blob([await writePlayerMD2(S.charMD2, GEAR, S.charBulk)]) });
     return out;
   }
   if (S.mode === 'prop') {
@@ -2360,15 +2375,31 @@ const UNIFORMS = [
   { id: 'wehrmacht', war: 2, side: 'Eixo', n: 'Wehrmacht (Heer)', d: 'Túnica M36 feldgrau, botas de cano alto e Stahlhelm.', r: { tunica: 'feldgrauLa', mangas: 'feldgrauLa', calca: 'feldgrauEsc', perneiras: 'couroPreto', botas: 'couroPreto', cabeca: 'feldgrau' }, kit: { belt: 'couroPreto', buckle: 'acoGasto', straps: 'Y', pouches: 'mauser', pockets: 1, buttons: 'cinzaClaro', collar: 'feldgrauEsc', tabs: 'cinzaClaro', eagle: 1, helmet: 'stahl', helmetMat: 'feldgrau', pack: 'bread', packMat: 'lona', gasmask: 1, canteen: 1, legs: 'jackboot' }, team: 'cla' },
   { id: 'fallschirm', war: 2, side: 'Eixo', n: 'Fallschirmjäger', d: 'Bata de salto em camuflagem Splinter sobre o feldgrau.', r: { tunica: 'splinter', mangas: 'splinter', calca: 'feldgrauLa', perneiras: 'couroPreto', botas: 'couroPreto', cabeca: 'feldgrau' }, kit: { belt: 'couroPreto', straps: 'Y', pouches: 'bandolier', helmet: 'cap', helmetMat: 'feldgrau', eagle: 1, gasmask: 1, canteen: 1, legs: 'gaiter', legMat: 'feldgrauLa', hair: 'couroMarrom' }, team: 'cla' },
   { id: 'dak', war: 2, side: 'Eixo', n: 'Afrika Korps', d: 'Brim tropical, botas de lona e capacete areia.', r: { tunica: 'tanDAK', mangas: 'tanDAK', calca: 'tanDAK', perneiras: 'perneiraLona', botas: 'couroMarrom', cabeca: 'dunkelgelb' }, fx: { dust: 0.5 }, kit: { belt: 'lona', buckle: 'acoGasto', straps: 'Y', strapMat: 'lona', pouches: 'mauser', pouchMat: 'couroMarrom', pockets: 1, buttons: 'acoGasto', eagle: 1, helmet: 'stahl', helmetMat: 'dunkelgelb', pack: 'bread', packMat: 'lona', canteen: 1, legs: 'gaiter', legMat: 'lona' }, team: 'cla' },
-  { id: 'ostfront', war: 2, side: 'Eixo', n: 'Frente Leste (inverno)', d: 'Agasalho branco de inverno, capacete caiado.', r: { tunica: 'brancoInv', mangas: 'brancoInv', calca: 'brancoInv', perneiras: 'couroPreto', botas: 'couroPreto', cabeca: 'inverno' }, fx: { dirt: 0.35 }, kit: { belt: 'couroPreto', straps: 'Y', pouches: 'mauser', helmet: 'stahl', helmetMat: 'inverno', gasmask: 1, legs: 'jackboot' }, team: 'cla' },
+  { id: 'ostfront', war: 2, side: 'Eixo', n: 'Frente Leste (inverno)', d: 'Agasalho branco de inverno, capacete caiado.', r: { tunica: 'brancoInv', mangas: 'brancoInv', calca: 'brancoInv', perneiras: 'couroPreto', botas: 'couroPreto', cabeca: 'inverno' }, fx: { dirt: 0.35 }, kit: { bulk: { tunica: 0.3, mangas: 0.22, calca: 0.15 }, belt: 'couroPreto', straps: 'Y', pouches: 'mauser', helmet: 'stahl', helmetMat: 'inverno', gasmask: 1, legs: 'jackboot' }, team: 'cla' },
   { id: 'usarmy', war: 2, side: 'Aliados', n: 'US Army 1944', d: 'Jaqueta M41, calça de lã OD, perneiras de lona e capacete M1.', r: { tunica: 'khakiM41', mangas: 'khakiM41', calca: 'odLa', perneiras: 'perneiraLona', botas: 'couroMarrom', cabeca: 'oliva' }, kit: { belt: 'lona', buckle: 'acoGasto', straps: 'H', strapMat: 'lona', pouches: 'garand', pouchMat: 'lona', buttons: 'baquelite', helmet: 'm1', helmetMat: 'oliva', net: 1, strapMat2: 'lona', pack: 'haversack', packMat: 'lona', canteen: 1, canteenMat: 'lona', legs: 'gaiter', legMat: 'perneiraLona', bootMat: 'couroMarrom' }, team: 'rvsf' },
   { id: 'usmc', war: 2, side: 'Aliados', n: 'USMC Pacífico', d: 'Uniforme "frogskin" camuflado dos fuzileiros.', r: { tunica: 'frogskinT', mangas: 'frogskinT', calca: 'frogskinT', perneiras: 'perneiraLona', botas: 'couroMarrom', cabeca: 'frogskinT' }, fx: { dirt: 0.4 }, kit: { belt: 'lona', straps: 'H', strapMat: 'lona', pouches: 'garand', pouchMat: 'lona', pockets: 1, buttons: 'baquelite', helmet: 'm1', helmetMat: 'frogskinT', pack: 'haversack', packMat: 'lona', canteen: 1, canteenMat: 'lona', legs: 'anklet', legMat: 'perneiraLona' }, team: 'rvsf' },
   { id: 'british', war: 2, side: 'Aliados', n: 'Exército Britânico', d: 'Battledress cáqui, perneiras de lona e capacete Brodie.', r: { tunica: 'khakiBD', mangas: 'khakiBD', calca: 'khakiBD', perneiras: 'perneiraLona', botas: 'couroPreto', cabeca: 'oliva' }, kit: { belt: 'perneiraLona', buckle: 'latao', straps: 'X', strapMat: 'perneiraLona', pouches: 'chest', pouchMat: 'perneiraLona', pockets: 1, buttons: 'baquelite', helmet: 'brodie', helmetMat: 'oliva', net: 1, pack: 'small', packMat: 'perneiraLona', canteen: 1, legs: 'anklet', legMat: 'perneiraLona' }, team: 'rvsf' },
   { id: 'rkka', war: 2, side: 'Aliados', n: 'Exército Vermelho', d: 'Gimnastiorka cáqui, calça escura, botas de couro.', r: { tunica: 'sovKhaki', mangas: 'sovKhaki', calca: 'sovEsc', perneiras: 'couroPreto', botas: 'couroPreto', cabeca: 'oliva' }, kit: { belt: 'couroMarrom', buckle: 'latao', pouches: 'two', pouchMat: 'couroMarrom', pockets: 1, buttons: 'baquelite', helmet: 'ssh40', helmetMat: 'verdeSov', star: 1, pack: 'sidor', packMat: 'lona', canteen: 1, legs: 'jackboot' }, team: 'rvsf' },
-  { id: 'rkkawinter', war: 2, side: 'Aliados', n: 'Exército Vermelho (inverno)', d: 'Telogreika acolchoada para o inverno russo.', r: { tunica: 'telogreika', mangas: 'telogreika', calca: 'telogreika', perneiras: 'couroPreto', botas: 'couroPreto', cabeca: 'oliva' }, kit: { belt: 'couroMarrom', buckle: 'latao', pouches: 'two', pouchMat: 'couroMarrom', helmet: 'ssh40', helmetMat: 'verdeSov', star: 1, legs: 'jackboot' }, team: 'rvsf' },
+  { id: 'rkkawinter', war: 2, side: 'Aliados', n: 'Exército Vermelho (inverno)', d: 'Telogreika acolchoada para o inverno russo.', r: { tunica: 'telogreika', mangas: 'telogreika', calca: 'telogreika', perneiras: 'couroPreto', botas: 'couroPreto', cabeca: 'oliva' }, kit: { bulk: { tunica: 0.42, mangas: 0.32, calca: 0.26 }, belt: 'couroMarrom', buckle: 'latao', pouches: 'two', pouchMat: 'couroMarrom', helmet: 'ssh40', helmetMat: 'verdeSov', star: 1, legs: 'jackboot' }, team: 'rvsf' },
   { id: 'heer1916', war: 1, side: 'Potências Centrais', n: 'Alemanha 1916', d: 'Feldgrau da Grande Guerra com o primeiro Stahlhelm.', r: { tunica: 'feldgrauLa', mangas: 'feldgrauLa', calca: 'feldgrauLa', perneiras: 'couroMarrom', botas: 'couroMarrom', cabeca: 'feldgrau' }, fx: { dirt: 0.45, rust: 0.1 }, kit: { belt: 'couroMarrom', buckle: 'acoGasto', straps: 'Y', strapMat: 'couroMarrom', pouches: 'mauser', pouchMat: 'couroMarrom', buttons: 'acoGasto', collar: 'feldgrauEsc', helmet: 'stahl', helmetMat: 'feldgrau', pack: 'tornister', packMat: 'couroMarrom', gasmask: 1, canteen: 1, legs: 'jackboot', bootMat: 'couroMarrom' }, team: 'cla' },
   { id: 'poilu', war: 1, side: 'Aliados', n: 'França "Poilu" 1915', d: 'Azul-horizonte, perneiras e capacete Adrian.', r: { tunica: 'horizonte', mangas: 'horizonte', calca: 'horizonte', perneiras: 'perneira', botas: 'couroMarrom', cabeca: 'horizonte' }, fx: { dirt: 0.45 }, kit: { belt: 'couroMarrom', buckle: 'latao', straps: 'Y', strapMat: 'couroMarrom', pouches: 'mauser', pouchMat: 'couroMarrom', buttons: 'latao', helmet: 'adrian', helmetMat: 'azulHorizonte', pack: 'musette', packMat: 'lona', canteen: 1, legs: 'puttee', legMat: 'azulHorizonte' }, team: 'rvsf' },
   { id: 'tommy', war: 1, side: 'Aliados', n: 'Britânico 1916 "Tommy"', d: 'Cáqui de serviço, perneiras enroladas e capacete Brodie.', r: { tunica: 'khakiBD', mangas: 'khakiBD', calca: 'khakiBD', perneiras: 'perneira', botas: 'couroMarrom', cabeca: 'oliva' }, fx: { dirt: 0.45 }, kit: { belt: 'perneiraLona', buckle: 'latao', straps: 'X', strapMat: 'perneiraLona', pouches: 'chest', pouchMat: 'perneiraLona', pockets: 1, buttons: 'latao', helmet: 'brodie', helmetMat: 'oliva', pack: 'small', packMat: 'perneiraLona', canteen: 1, legs: 'puttee', legMat: 'perneira' }, team: 'rvsf' },
+  // ---- Especialistas da 2ª Guerra (conceitos novos: peças 3D próprias + pintura HD)
+  { id: 'pilotoRAF', war: 2, grp: 'esp', side: 'Aliados', n: 'Piloto de caça da RAF', d: 'Jaqueta Irvin de couro de carneiro, colete Mae West amarelo, gorro de voo e óculos.', r: { tunica: 'couroCarneiro', mangas: 'couroCarneiro', calca: 'azulRAF', perneiras: 'couroPreto', botas: 'couroPreto', cabeca: 'couroMarrom' }, fx: { dirt: 0.2 }, kit: { bulk: { tunica: 0.38, mangas: 0.3 }, helmet: 'flycap', helmetMat: 'couroMarrom', goggles: 1, maewest: 'amareloMae', collar: 'laCarneiro', cuff: 'laCarneiro', legs: 'jackboot', face: 'clean' }, team: 'rvsf' },
+  { id: 'pilotoLW', war: 2, grp: 'esp', side: 'Eixo', n: 'Piloto da Luftwaffe', d: 'Macacão de voo, colete salva-vidas, gorro de couro com óculos e botas de voo.', r: { tunica: 'macacaoLW', mangas: 'macacaoLW', calca: 'macacaoLW', perneiras: 'couroPreto', botas: 'couroPreto', cabeca: 'couroMarrom' }, fx: { dirt: 0.2 }, kit: { bulk: { tunica: 0.15, mangas: 0.12, calca: 0.1 }, belt: 'couroPreto', buckle: 'acoGasto', helmet: 'flycap', helmetMat: 'couroMarrom', goggles: 1, maewest: 'amareloMae', pockets: 1, legs: 'jackboot', face: 'clean' }, team: 'cla' },
+  { id: 'panzer', war: 2, grp: 'esp', side: 'Eixo', n: 'Tanquista Panzer', d: 'Jaqueta preta transpassada, quepe Feldmütze e fones de rádio do tanque.', r: { tunica: 'pretoPanzer', mangas: 'pretoPanzer', calca: 'pretoPanzer', perneiras: 'pretoPanzer', botas: 'couroPreto', cabeca: 'pretoPanzer' }, fx: { dirt: 0.3 }, kit: { belt: 'couroPreto', buckle: 'acoGasto', helmet: 'sidecap', helmetMat: 'pretoPanzer', headset: 1, collar: 'pretoPanzer', tabs: 'vermelho', eagle: 1, wrap: 1, legs: 'anklet', legMat: 'pretoPanzer', face: 'stubble' }, team: 'cla' },
+  { id: 'tankerUS', war: 2, grp: 'esp', side: 'Aliados', n: 'Tanquista americano', d: 'Jaqueta de tanquista com punhos de malha, capacete acolchoado Rawlings e óculos.', r: { tunica: 'tankerUS', mangas: 'tankerUS', calca: 'odLa', perneiras: 'perneiraLona', botas: 'couroMarrom', cabeca: 'couroMarrom' }, fx: { dirt: 0.35 }, kit: { bulk: { tunica: 0.16, mangas: 0.12 }, belt: 'lona', buckle: 'acoGasto', helmet: 'tanker', helmetMat: 'couroMarrom', goggles: 1, cuff: 'odLa', zip: 1, holster: 1, legs: 'gaiter', legMat: 'perneiraLona', face: 'stubble' }, team: 'rvsf' },
+  { id: 'para101', war: 2, grp: 'esp', side: 'Aliados', n: 'Paraquedista (101ª Aerotransportada)', d: 'Macacão de salto M42, capacete M1 com rede, rosto pintado e faca na perna.', r: { tunica: 'jumpM42', mangas: 'jumpM42', calca: 'jumpM42', perneiras: 'couroMarrom', botas: 'couroMarrom', cabeca: 'oliva' }, fx: { dirt: 0.45 }, kit: { belt: 'lona', buckle: 'acoGasto', straps: 'H', strapMat: 'lona', pouches: 'garand', pouchMat: 'lona', pockets: 1, helmet: 'm1', helmetMat: 'oliva', net: 1, pack: 'musette', packMat: 'lona', legknife: 1, legs: 'jumpboot', bootMat: 'couroMarrom', face: 'stripes' }, team: 'rvsf' },
+  { id: 'comando', war: 2, grp: 'esp', side: 'Aliados', n: 'Comando britânico', d: 'Boina verde, jérsei de lã, rosto escurecido com rolha queimada.', r: { tunica: 'jersey', mangas: 'jersey', calca: 'khakiBD', perneiras: 'perneiraLona', botas: 'couroPreto', cabeca: 'verdeBoina' }, fx: { dirt: 0.35 }, kit: { belt: 'perneiraLona', buckle: 'latao', straps: 'X', strapMat: 'perneiraLona', pouches: 'chest', pouchMat: 'perneiraLona', helmet: 'beret', helmetMat: 'verdeBoina', legknife: 1, legs: 'anklet', legMat: 'perneiraLona', face: 'dark', hair: 'couroPreto' }, team: 'rvsf' },
+  { id: 'sniper', war: 2, grp: 'esp', side: 'Aliados', n: 'Atirador de elite (camuflado)', d: 'Bata Denison, capuz com tiras de juta e rosto camuflado.', r: { tunica: 'denisonT', mangas: 'denisonT', calca: 'khakiBD', perneiras: 'perneiraLona', botas: 'couroPreto', cabeca: 'sacoAreia' }, fx: { dirt: 0.5 }, kit: { bulk: { tunica: 0.24, mangas: 0.16 }, belt: 'perneiraLona', buckle: 'latao', pouches: 'two', pouchMat: 'perneiraLona', helmet: 'hood', helmetMat: 'sacoAreiaV', strips: ['sacoAreia', 'lonaVerde', 'sacoAreiaV'], legs: 'anklet', legMat: 'perneiraLona', face: 'green' }, team: 'rvsf' },
+  { id: 'medico', war: 2, grp: 'esp', side: 'Aliados', n: 'Médico de combate (EUA)', d: 'Capacete M1 com cruzes vermelhas, braçadeira e bolsas de primeiros socorros.', r: { tunica: 'khakiM41', mangas: 'khakiM41', calca: 'odLa', perneiras: 'perneiraLona', botas: 'couroMarrom', cabeca: 'oliva' }, fx: { dirt: 0.4 }, kit: { belt: 'lona', buckle: 'acoGasto', straps: 'Y', strapMat: 'lona', pouches: 'two', pouchMat: 'lona', helmet: 'm1', helmetMat: 'oliva', medic: 1, armband: 'medic', canteen: 1, canteenMat: 'lona', legs: 'gaiter', legMat: 'perneiraLona', face: 'stubble' }, team: 'rvsf' },
+  { id: 'radio', war: 2, grp: 'esp', side: 'Aliados', n: 'Operador de rádio (EUA)', d: 'Rádio SCR-300 nas costas com antena alta, capacete M1 e jaqueta M41.', r: { tunica: 'khakiM41', mangas: 'khakiM41', calca: 'odLa', perneiras: 'perneiraLona', botas: 'couroMarrom', cabeca: 'oliva' }, fx: { dirt: 0.35 }, kit: { belt: 'lona', buckle: 'acoGasto', straps: 'H', strapMat: 'lona', pouches: 'garand', pouchMat: 'lona', helmet: 'm1', helmetMat: 'oliva', net: 1, pack: 'radio', packMat: 'oliva', legs: 'gaiter', legMat: 'perneiraLona', face: 'clean' }, team: 'rvsf' },
+  { id: 'lancachamas', war: 2, grp: 'esp', side: 'Eixo', n: 'Lança-chamas (Flammenwerfer)', d: 'Feldgrau com os dois tanques do Flammenwerfer 41 nas costas.', r: { tunica: 'feldgrauLa', mangas: 'feldgrauLa', calca: 'feldgrauEsc', perneiras: 'couroPreto', botas: 'couroPreto', cabeca: 'feldgrau' }, fx: { dirt: 0.45, burn: 0.2 }, kit: { belt: 'couroPreto', buckle: 'acoGasto', straps: 'Y', helmet: 'stahl', helmetMat: 'feldgrau', pack: 'flamer', packMat: 'feldgrau', collar: 'feldgrauEsc', legs: 'jackboot', face: 'stubble' }, team: 'cla' },
+  { id: 'gebirgs', war: 2, grp: 'esp', side: 'Eixo', n: 'Gebirgsjäger (tropa de montanha)', d: 'Anoraque, Bergmütze com edelvais, mochila de montanha e polainas curtas.', r: { tunica: 'windjacke', mangas: 'windjacke', calca: 'feldgrauLa', perneiras: 'feldgrauEsc', botas: 'couroMarrom', cabeca: 'feldgrau' }, fx: { dirt: 0.3 }, kit: { belt: 'couroPreto', buckle: 'acoGasto', straps: 'Y', pouches: 'mauser', helmet: 'bergmutze', helmetMat: 'feldgrauLa', edelweiss: 1, pack: 'rucksack', packMat: 'lona', legs: 'anklet', legMat: 'feldgrauEsc', bootMat: 'couroMarrom', face: 'stubble' }, team: 'cla' },
+  { id: 'bersagliere', war: 2, grp: 'esp', side: 'Eixo', n: 'Bersagliere (Itália)', d: 'Grigio-verde, capacete M33 com o penacho de penas de galo.', r: { tunica: 'grigioVerde', mangas: 'grigioVerde', calca: 'grigioVerde', perneiras: 'grigioVerde', botas: 'couroMarrom', cabeca: 'grigioVerde' }, fx: { dirt: 0.35 }, kit: { belt: 'couroMarrom', buckle: 'acoGasto', straps: 'Y', strapMat: 'couroMarrom', pouches: 'two', pouchMat: 'couroMarrom', buttons: 'acoGasto', pockets: 1, helmet: 'm33plume', helmetMat: 'grigioVerde', legs: 'puttee', legMat: 'grigioVerde', face: 'stubble' }, team: 'cla' },
+  { id: 'japao', war: 2, grp: 'esp', side: 'Eixo', n: 'Exército Imperial Japonês', d: 'Uniforme Tipo 98, quepe com abas para o pescoço e perneiras enroladas.', r: { tunica: 'japMostarda', mangas: 'japMostarda', calca: 'japMostarda', perneiras: 'japMostarda', botas: 'couroMarrom', cabeca: 'japMostarda' }, fx: { dirt: 0.4 }, kit: { belt: 'couroMarrom', buckle: 'acoGasto', pouches: 'two', pouchMat: 'couroMarrom', buttons: 'acoGasto', pockets: 1, helmet: 'japcap', helmetMat: 'japMostarda', star: 1, starMat: 'amarelo', canteen: 1, legs: 'puttee', legMat: 'japMostarda', face: 'clean' }, team: 'cla' },
+  { id: 'finlandes', war: 2, grp: 'esp', side: 'Aliados', n: 'Esquiador finlandês (Guerra de Inverno)', d: 'Parca branca de neve e gorro de pele cinza.', r: { tunica: 'brancoInv', mangas: 'brancoInv', calca: 'brancoInv', perneiras: 'couroMarrom', botas: 'couroMarrom', cabeca: 'peleCinza' }, fx: { dirt: 0.15 }, kit: { bulk: { tunica: 0.34, mangas: 0.26, calca: 0.16 }, belt: 'couroMarrom', buckle: 'latao', pouches: 'two', pouchMat: 'couroMarrom', helmet: 'furhat', helmetMat: 'peleCinza', legs: 'jackboot', bootMat: 'couroMarrom', face: 'cold' }, team: 'rvsf' },
+  { id: 'resistencia', war: 2, grp: 'esp', side: 'Aliados', n: 'Resistência francesa (FFI)', d: 'Jaqueta de couro civil, calça de tweed, boina preta e braçadeira tricolor.', r: { tunica: 'couroMarrom', mangas: 'couroMarrom', calca: 'tweed', perneiras: 'tweed', botas: 'couroMarrom', cabeca: 'boinaPreta' }, fx: { dirt: 0.35 }, kit: { bulk: { tunica: 0.2, mangas: 0.14 }, belt: 'couroMarrom', buckle: 'latao', pouches: 'bandolier', helmet: 'beret', helmetMat: 'boinaPreta', armband: 'ffi', legs: 'none', face: 'stubble', hair: 'couroPreto' }, team: 'rvsf' },
   { id: 'doughboy', war: 1, side: 'Aliados', n: 'EUA 1918 "Doughboy"', d: 'Lã verde-oliva, perneiras e capacete Brodie.', r: { tunica: 'odLa', mangas: 'odLa', calca: 'odLa', perneiras: 'perneira', botas: 'couroMarrom', cabeca: 'oliva' }, fx: { dirt: 0.45 }, kit: { belt: 'lona', buckle: 'acoGasto', straps: 'H', strapMat: 'lona', pouches: 'garand', pouchMat: 'lona', pockets: 1, buttons: 'latao', helmet: 'brodie', helmetMat: 'oliva', pack: 'haversack', packMat: 'lona', canteen: 1, legs: 'puttee', legMat: 'odLa' }, team: 'rvsf' },
 ];
 // ---------------------------------------------------------------- equipamento pintado em 3D (posição de cada pixel na pose parada)
@@ -2385,6 +2416,103 @@ function kitSetup(sk) {
   sk._kit = { id: U.id, off: JSON.stringify(S.char.kitOff || []), U, K, y0: T.y, xf: T.xmax, zb: T.zmin + 1.3, zt: T.zmax, hx: H.x, hy: H.y, htop: H.zmax, foot: Bo.zmin, legTop: Le.zmax };
   return sk._kit;
 }
+// ---------------------------------------------------------------- pintura HD do personagem: oclusão (voxels), dobras, costuras e rosto
+function charAO(sk) {
+  if (sk._ao) return sk._ao;
+  const s = model.surfaces[0], P = s.pos[0], T = s.tris, vs = 0.35;
+  const mn = [1e9, 1e9, 1e9], mx = [-1e9, -1e9, -1e9]; for (let i = 0; i < s.nv; i++) for (let k = 0; k < 3; k++) { mn[k] = Math.min(mn[k], P[i * 3 + k]); mx[k] = Math.max(mx[k], P[i * 3 + k]); }
+  const pad = 6, nx = Math.ceil((mx[0] - mn[0] + 2 * pad) / vs), ny = Math.ceil((mx[1] - mn[1] + 2 * pad) / vs), nz = Math.ceil((mx[2] - mn[2] + 2 * pad) / vs);
+  const V = new Uint8Array(nx * ny * nz), O = [mn[0] - pad, mn[1] - pad, mn[2] - pad];
+  const mark = (x, y, z) => { const i = Math.floor((x - O[0]) / vs), j = Math.floor((y - O[1]) / vs), k = Math.floor((z - O[2]) / vs); if (i >= 0 && j >= 0 && k >= 0 && i < nx && j < ny && k < nz) V[(k * ny + j) * nx + i] = 1; };
+  for (let t = 0; t < T.length; t += 3) {
+    const a = T[t] * 3, b = T[t + 1] * 3, c = T[t + 2] * 3;
+    const l = Math.max(Math.hypot(P[b] - P[a], P[b + 1] - P[a + 1], P[b + 2] - P[a + 2]), Math.hypot(P[c] - P[a], P[c + 1] - P[a + 1], P[c + 2] - P[a + 2])), n = Math.ceil(l / (vs * 0.7)) + 1;
+    for (let u = 0; u <= n; u++) for (let v = 0; v <= n - u; v++) { const fu = u / n, fv = v / n, fw = 1 - fu - fv; mark(P[a] * fw + P[b] * fu + P[c] * fv, P[a + 1] * fw + P[b + 1] * fu + P[c + 1] * fv, P[a + 2] * fw + P[b + 2] * fu + P[c + 2] * fv); }
+  }
+  const occ = (x, y, z) => { const i = Math.floor((x - O[0]) / vs), j = Math.floor((y - O[1]) / vs), k = Math.floor((z - O[2]) / vs); return i >= 0 && j >= 0 && k >= 0 && i < nx && j < ny && k < nz && V[(k * ny + j) * nx + i]; };
+  const dirs = []; for (let k = 0; k < 14; k++) { const u = (k + 0.5) / 14, r = Math.sqrt(u), th = k * 2.39996; dirs.push([r * Math.cos(th), r * Math.sin(th), Math.sqrt(1 - u)]); }
+  const steps = [0.8, 1.3, 2, 2.9, 4.1, 5.6], ao = new Float32Array(sk.w * sk.h).fill(1);
+  const t1 = new THREE.Vector3(), t2 = new THREE.Vector3(), nn = new THREE.Vector3();
+  for (let i = 0; i < sk.w * sk.h; i++) {
+    if (sk.id[i] < 0 || (i % 2 && ((i / sk.w) | 0) % 2)) continue;
+    nn.set(-sk.nrm3[i * 3], -sk.nrm3[i * 3 + 1], -sk.nrm3[i * 3 + 2]); if (nn.lengthSq() < 0.5) continue;
+    t1.set(Math.abs(nn.x) < 0.9 ? 1 : 0, Math.abs(nn.x) < 0.9 ? 0 : 1, 0).cross(nn).normalize(); t2.crossVectors(nn, t1);
+    const px = sk.pos3[i * 3], py = sk.pos3[i * 3 + 1], pz = sk.pos3[i * 3 + 2]; let o = 0;
+    for (const d of dirs) {
+      const dx = t1.x * d[0] + t2.x * d[1] + nn.x * d[2], dy = t1.y * d[0] + t2.y * d[1] + nn.y * d[2], dz = t1.z * d[0] + t2.z * d[1] + nn.z * d[2];
+      for (let k = 0; k < steps.length; k++) if (occ(px + dx * steps[k], py + dy * steps[k], pz + dz * steps[k])) { o += 1 - k / steps.length * 0.6; break; }
+    }
+    ao[i] = 1 - Math.min(1, o / dirs.length) * 0.9;
+  }
+  // preenche os pulados e suaviza
+  const w = sk.w, h = sk.h, out = new Float32Array(w * h);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const i = y * w + x; if (sk.id[i] < 0) { out[i] = 1; continue; }
+    let a = 0, n = 0; for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) { const xx = x + dx, yy = y + dy; if (xx < 0 || yy < 0 || xx >= w || yy >= h) continue; const j = yy * w + xx; if (sk.id[j] !== sk.id[i] || (j % 2 && ((j / w) | 0) % 2)) continue; a += ao[j]; n++; }
+    out[i] = n ? a / n : 1;
+  }
+  sk._ao = out; return out;
+}
+// sombreamento HD: oclusão + dobras do tecido + costuras + luz de cima
+function hqShade(sk, i, isl) {
+  const reg = REG_OF[isl], x = sk.pos3[i * 3], y = sk.pos3[i * 3 + 1], z = sk.pos3[i * 3 + 2], nx = -sk.nrm3[i * 3], ny = -sk.nrm3[i * 3 + 1], nz = -sk.nrm3[i * 3 + 2];
+  const ao = sk._ao ? sk._ao[i] : 1, n = sk.noise[i] * 6.3, K = KIT || { zb: 7.5, zt: 23.8, y0: 0 };
+  let f = 1;
+  const fold = (t, a) => a * Math.sign(Math.sin(t)) * Math.pow(Math.abs(Math.sin(t)), 0.6);
+  if (reg === 'mangas') { const e = Math.exp(-Math.pow((z - 13.4) / 2.4, 2)); f += fold(z * 2.6 + n + y * 0.8, 0.11 * e) + 0.04 * Math.sin(z * 1.3 + n * 0.5); }
+  else if (reg === 'calca') { const e = Math.exp(-Math.pow((z + 4.5) / 2.4, 2)) * (0.5 + 0.5 * sk.noise2[i]); f += fold(z * 2.5 + n + (y - K.y0) * 0.9, 0.1 * e) + (z < -11 ? fold(z * 3.6 + n * 1.3 + y, 0.08) : 0) + 0.04 * Math.sin((y - K.y0) * 1.6 + n * 0.4); if (Math.abs(nx) < 0.07) f *= 0.82; }
+  else if (reg === 'tunica') {
+    if (z < K.zb + 0.2 && z > K.zb - 2.6) f += 0.12 * Math.sin((y - K.y0) * 2.7 + n);
+    if (Math.abs(ny) > 0.55 && z > K.zt - 7.5 && z < K.zt - 2.5) f += 0.09 * Math.sin((z + x * 0.7) * 2.9 + n);
+    f += 0.05 * Math.sin((y - K.y0) * 1.5 + n * 0.6);
+    if (Math.abs(nx) < 0.07) f *= 0.82;
+    if (Math.abs(z - (K.zt - 0.9)) < 0.09 && Math.abs(nx) > 0.2) f *= 0.8;
+  } else if (reg === 'perneiras' || reg === 'botas') f += 0.04 * Math.sin(z * 5 + n);
+  const edge = sk.border[i] < 2 ? 0.86 : 1, light = 0.9 + 0.13 * nz + 0.04 * Math.max(0, nx);
+  return Math.max(0.25, Math.pow(ao, 1.15) * f * edge * light * (0.94 + 0.12 * sk.fine[i]));
+}
+// rosto pintado no espaço da UV (o rosto do AC fica numa ilha fixa da skin)
+const SKIN_TONE = { clara: [214, 170, 140], media: [190, 140, 108], morena: [156, 108, 78], escura: [104, 72, 52] };
+function facePaint(sk, X, Y, isl, K) {
+  const s = sk.w / 1280; let u = X / s, v = Y / s;
+  if (isl === 7) { u += 103; v += 312; }                                  // placa da boca e do queixo (ilha separada)
+  else if (isl !== 6) v = 900;                                            // pescoço e orelhas: só pele
+  const base = SKIN_TONE[(S.char && S.char.skinTone) || 'media'];
+  let c = base.slice(), k = 1;
+  const E = (cx, cy, rx, ry) => Math.pow((u - cx) / rx, 2) + Math.pow((v - cy) / ry, 2);
+  const sm = (a, b, t) => { const q = Math.min(1, Math.max(0, (t - a) / (b - a))); return q * q * (3 - 2 * q); };
+  const face = E(543, 668, 140, 132);
+  k *= 0.86 + 0.16 * (1 - sm(0.3, 1.2, face));                                     // bordas do rosto mais escuras
+  for (const ex of [496, 590]) { const d = E(ex, 632, 42, 26); k *= 1 - 0.16 * (1 - sm(0.2, 1, d)); }               // órbitas
+  k *= 1 + 0.12 * (1 - sm(0, 1, E(543, 600, 90, 30)));                              // testa
+  k *= 1 + 0.12 * (1 - sm(0, 1, E(543, 660, 11, 42)));                              // dorso do nariz
+  k *= 1 - 0.22 * (1 - sm(0, 1, E(543, 702, 30, 8)));                               // sombra sob o nariz
+  for (const ex of [470, 616]) { const d = E(ex, 690, 40, 30); c = c.map((q, j) => q + [16, -4, -4][j] * (1 - sm(0, 1, d))); }        // bochechas
+  k *= 1 - 0.18 * (1 - sm(0.4, 1.4, E(543, 776, 120, 22)));                           // queixo / pescoço
+  // barba por fazer / pintura de rosto
+  const fv = K.face || 'stubble', nz = sk.noise[sk.w * Y + X] || 0.5, fn = sk.fine[sk.w * Y + X] || 0.5;
+  if (fv === 'stubble' && v > 690 && face < 1.1 && E(543, 722, 34, 12) > 1) k *= 1 - 0.16 * (0.6 + 0.4 * fn) * sm(690, 720, v);
+  if (fv === 'cold') c = c.map((q, j) => q + [22, -6, -4][j] * (1 - sm(0, 1, E(543, 690, 130, 70))));
+  if (fv === 'dark') { const t = 0.55 + 0.35 * nz; c = c.map((q, j) => q * (1 - t) + [40, 34, 30][j] * t); }
+  if (fv === 'green') { const t = nz > 0.55 ? 0.75 : fn > 0.6 ? 0.5 : 0.25; c = c.map((q, j) => q * (1 - t) + (nz > 0.55 ? [54, 66, 38] : [70, 56, 38])[j] * t); }
+  if (fv === 'stripes') { for (const sd of [-1, 1]) { const d = Math.abs((u - 543) * sd * 0.6 + (v - 690) * 0.8 - 60); if (d < 13 && face < 1) c = [44, 50, 34]; } if (Math.abs(v - 645) < 8 && face < 0.9) c = [44, 50, 34]; }
+  // olhos
+  for (const ex of [496, 590]) {
+    const d = E(ex, 634, 19, 9);
+    if (d < 1) {
+      const r = Math.hypot(u - ex, (v - 634) * 1.25);
+      if (r < 3) return [14, 12, 12];
+      if (r < 7.5) return [76, 58, 40].map(q => q * (0.8 + 0.3 * fn));
+      return [212, 206, 196].map(q => q * (1 - 0.25 * sm(0.5, 1, d)));
+    }
+    if (Math.abs(E(ex, 634, 21, 11) - 1) < 0.25 && v < 636) return [40, 28, 22];               // pálpebra
+    const bv = 608 + Math.pow((u - ex) / 26, 2) * 6; if (Math.abs(v - bv) < 4.5 && Math.abs(u - ex) < 28) { const hc = MATS[K.hair || 'couroMarrom'].c; return hc.map(q => q * 0.7); }   // sobrancelhas
+  }
+  // boca
+  const mo = E(543, 722, 30, 6); if (mo < 1) { const up = v < 722; return [140, 76, 66].map(q => q * (up ? 0.75 : 0.95) * (1 - 0.3 * sm(0.5, 1, mo))); }
+  if (Math.abs(v - 722) < 1.5 && Math.abs(u - 543) < 34) return [70, 40, 34];
+  return c.map(q => Math.max(0, Math.min(255, q * k)));
+}
 const band = (v, a, b, soft = 0.25) => v < a - soft || v > b + soft ? 0 : v < a ? 1 - (a - v) / soft : v > b ? 1 - (v - b) / soft : 1;
 function kitAt(sk, i, isl, r0, g0, b0) {
   const K = KIT.K, reg = REG_OF[isl]; if (!reg) return null;
@@ -2396,30 +2524,47 @@ function kitAt(sk, i, isl, r0, g0, b0) {
   if (reg === 'rosto' || reg === 'cabeca') {
     if (K.helmet) {
       const dx = x - KIT.hx, rimBack = K.helmet === 'stahl' ? 2.3 : K.helmet === 'brodie' ? 0.2 : 1.2;
-      let brim = KIT.htop - (K.helmet === 'cap' ? 3.2 : 4.4) - (dx < 0 ? Math.min(1, -dx / 4) * rimBack : 0) - (K.helmet === 'stahl' ? Math.max(0, Math.abs(y - KIT.hy) - 2.5) * 0.25 : 0);
+      const NB = { flycap: 5.4, tanker: 5.2, beret: 1.9, sidecap: 2.1, bergmutze: 3.0, japcap: 3.2, furhat: 4.1, hood: 6.8, m33plume: 4.4 }[K.helmet];
+      let brim = NB ? KIT.htop - NB - (dx < 0 && (K.helmet === 'japcap' || K.helmet === 'hood') ? Math.min(1, -dx / 3) * 4 : 0) : KIT.htop - (K.helmet === 'cap' ? 3.2 : 4.4) - (dx < 0 ? Math.min(1, -dx / 4) * rimBack : 0) - (K.helmet === 'stahl' ? Math.max(0, Math.abs(y - KIT.hy) - 2.5) * 0.25 : 0);
+      const ay = Math.abs(y - KIT.hy);
+      if (K.goggles && front) { const zg = KIT.htop - (K.helmet === 'flycap' || K.helmet === 'tanker' ? 3.15 : 3.95); if (Math.abs(z - zg) < 0.62) { const d = Math.abs(ay - 1.32); if (d < 0.5) return [d < 0.38 ? 'vidro' : 'acoGasto', d < 0.38 ? 1.25 : 1, 1, 1]; if (Math.abs(z - zg) < 0.3) return [K.gogStrap || 'couroMarrom', 0.9, 1]; } }
+      if (K.headset && !front && !back && Math.abs(z - (KIT.htop - 5.4)) < 0.85) return ['couroPreto', 0.9, 1, 1];
       if (z > brim) {
+        if (K.helmet === 'm33plume' && y - KIT.hy > 1.9 && x - KIT.hx < 0.8) return ['preto', 0.8 + 0.4 * sk.fine[i], 1, 1];       // base do penacho
+        if (K.medic) { const a = Math.atan2(y - KIT.hy, x - KIT.hx), zc = brim + 1.9; for (const d0 of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) { let da = a - d0; da = Math.atan2(Math.sin(da), Math.cos(da)); const u = da * 3.3, v = z - zc; if (Math.hypot(u, v) < 0.95) { if ((Math.abs(u) < 0.55 && Math.abs(v) < 0.17) || (Math.abs(u) < 0.17 && Math.abs(v) < 0.55)) return ['vermelho', 1, 1, 1]; return ['brancoCruz', 1, 1, 1]; } } }
+        if (K.edelweiss && dy < 0 && Math.abs(ny) > 0.5) { const u = (x - KIT.hx) * 1.1, v = z - (brim + 1.0), r = Math.hypot(u, v), t = Math.atan2(v, u); if (r < 0.62 * (0.5 + 0.5 * Math.abs(Math.cos(t * 2.5)))) return [r < 0.16 ? 'amarelo' : 'brancoCruz', 1.1, 1, 1]; }
         let sh = 1; if (z < brim + 0.45) sh = 0.62;                                     // aba / borda
         if (K.net && (Math.abs(Math.sin(z * 2.2 + y * 2.2)) < 0.12 || Math.abs(Math.sin(z * 2.2 - y * 2.2)) < 0.12)) return ['oliva', 0.55, 1, 1];
         if (K.helmet === 'adrian' && Math.abs(y - KIT.hy) < 0.35 && z > KIT.htop - 1.6) return [K.helmetMat, 1.25, 1];   // crista
-        if (K.star && front && z > brim + 0.8 && z < brim + 2.4 && Math.abs(y - KIT.hy) < 0.9) return ['vermelho', 1, 1];
+        if (K.star && front && z > brim + 0.8 && z < brim + 2.4 && Math.abs(y - KIT.hy) < 0.9) { const u = (y - KIT.hy) / 0.8, v = (z - brim - 1.6) / 0.8, r = Math.hypot(u, v), t = Math.atan2(v, u) - Math.PI / 2, st = 0.45 + 0.55 * Math.pow(Math.abs(Math.cos(t * 2.5)), 6); if (r < st) return [K.starMat || 'vermelho', 1, 1, 1]; }
         return [K.helmetMat, sh, 1, 1];
       }
       if (K.helmet !== 'cap' && Math.abs(Math.abs(y - KIT.hy) - 2.9) < 0.25 && z > brim - 3.5 && !front) return [K.strapMat || 'couroMarrom', 0.8, 1];  // jugular
     }
+    if (reg === 'cabeca' && z < KIT.htop - 6.5) return [S.islandMat[0].get(REGIONS.tunica.isl[0]) || 'lona', 0.75, 1];      // gola por baixo do queixo
     if (reg === 'cabeca') return [K.hair || 'couroMarrom', 0.45, 0.9];
+    if (S.char.hq) return null;                                                           // rosto: pintado à parte (facePaint)
     return ['pele', 1, 0.8];
   }
   // pernas
   if (reg === 'perneiras' || reg === 'botas' || (reg === 'calca' && z < KIT.legTop + 2.5)) {
     const L = K.legs;
     if (reg === 'botas') { if (z < KIT.foot + 0.6) return ['couroPreto', 0.55, 1]; if (L === 'jackboot') return [K.bootMat || 'couroPreto', 1.08, 1]; if (front && Math.abs(Math.sin(z * 6)) < 0.25 && z > KIT.foot + 2) return ['couroPreto', 0.6, 0.8]; return null; }
+    if (K.legknife && dy > 0 && Math.abs(ny) > 0.45 && z > KIT.legTop - 1.5 && z < KIT.legTop + 3.2) { const sh = z > KIT.legTop + 2.6 ? 0.7 : Math.abs(z - (KIT.legTop + 0.6)) < 0.18 || Math.abs(z - (KIT.legTop + 2.1)) < 0.18 ? 0.55 : 1; return ['couroMarrom', sh, 1]; }
+    if (L === 'jumpboot' && z < KIT.legTop + 1.2) { if (front && Math.abs(ady - 0) < 9 && Math.abs(Math.sin(z * 7)) < 0.2) return ['couroPreto', 0.55, 1]; return [K.bootMat || 'couroMarrom', 1.05 + 0.12 * Math.max(0, nx), 1]; }
+    if (L === 'none') return reg === 'botas' ? null : reg === 'perneiras' && z < KIT.foot + 4 ? [K.bootMat || 'couroMarrom', 1, 1] : null;
     if (L === 'jackboot' && z < KIT.legTop + 2.5) return [K.bootMat || 'couroPreto', 1.08 + 0.12 * Math.max(0, nx), 1];
     if (L === 'puttee' && z < KIT.legTop + 2.5) { const t = ((z * 1.6 + Math.atan2(ny, nx) * 0.35) % 1 + 1) % 1; return [K.legMat || 'perneira', t < 0.12 ? 0.7 : 1, 1]; }
     if ((L === 'gaiter' || L === 'anklet') && z < KIT.legTop + (L === 'gaiter' ? 1.5 : -1.5)) { const side = Math.abs(ny) > 0.55; if (side && Math.abs(Math.sin(z * 3.2)) < 0.22) return ['acoGasto', 0.8, 1]; return [K.legMat || 'perneiraLona', z > KIT.legTop + 1 ? 0.8 : 1, 1]; }
     return null;
   }
   if (reg !== 'tunica' && reg !== 'calca' && reg !== 'mangas') return null;
-  if (reg === 'mangas') { if (K.cuff && z < 9.5 && x > 8) return [K.cuff, 0.85, 1]; return null; }
+  if (reg === 'mangas') {
+    if (K.armband && dy > 0) { const zt = KIT.zt - 5.6; if (Math.abs(z - zt) < 0.75) {
+      if (K.armband === 'ffi') { const t = (z - zt + 0.75) / 1.5; return [t < 0.33 ? 'azulRoundel' : t < 0.66 ? 'brancoCruz' : 'vermelho', 1, 1, 1]; }
+      { const u = ((x % 2.2) + 2.2) % 2.2 - 1.1, v = z - zt; if ((Math.abs(v) < 0.14 && Math.abs(u) < 0.45) || (Math.abs(u) < 0.14 && Math.abs(v) < 0.45)) return ['vermelho', 1, 1, 1]; }
+      return ['brancoCruz', 1, 1, 1]; } }
+    if (K.cuff && z < 9.5 && x > 8) return [K.cuff, 0.85, 1]; return null; }
   // cinto + fivela
   if (K.belt && z > zb - 1 && z < zb + 1) {
     if (front && ady < 0.9) return [K.buckle || 'acoGasto', z > zb - 0.7 && z < zb + 0.7 ? 1.15 : 0.7, 1];
@@ -2450,7 +2595,7 @@ function kitAt(sk, i, isl, r0, g0, b0) {
   }
   // mochila / bornal / máscara de gás / cantil
   if (back && K.pack) {
-    const PK = { bread: [zb + 0.6, zb + 4, -4.5, -0.5], haversack: [zb + 3, KIT.zt - 3, -2.8, 2.8], tornister: [zb + 5, KIT.zt - 2.5, -3.5, 3.5], musette: [zb + 1, zb + 5.5, -5, -1.2], sidor: [zb + 4, KIT.zt - 4, -3, 3], small: [zb + 6, KIT.zt - 3.5, -3, 3] }[K.pack];
+    const PK = { bread: [zb + 0.6, zb + 4, -4.5, -0.5], haversack: [zb + 3, KIT.zt - 3, -2.8, 2.8], tornister: [zb + 5, KIT.zt - 2.5, -3.5, 3.5], musette: [zb + 1, zb + 5.5, -5, -1.2], sidor: [zb + 4, KIT.zt - 4, -3, 3], small: [zb + 6, KIT.zt - 3.5, -3, 3], radio: [zb + 2.5, KIT.zt - 1, -3.2, 3.2], flamer: [zb + 0.5, KIT.zt + 0.5, -4.2, 4.2], rucksack: [zb + 1, KIT.zt - 2.5, -4.6, 4.6] }[K.pack];
     if (PK && z > PK[0] && z < PK[1] && dy > PK[2] && dy < PK[3]) {
       if (K.pack === 'tornister' && z > PK[1] - 1.4) return ['feldgrauEsc', 0.9 + 0.2 * Math.sin(dy * 3), 1];      // capote enrolado
       const edge = Math.min(z - PK[0], PK[1] - z, dy - PK[2], PK[3] - dy) < 0.3;
@@ -2459,8 +2604,12 @@ function kitAt(sk, i, isl, r0, g0, b0) {
   }
   if (K.gasmask && back && z > zb + 0.5 && z < zb + 4.5 && dy > 1 && dy < 3.6) return ['feldgrau', 0.85 + 0.2 * (Math.abs(Math.sin(z * 5)) > 0.6), 1];
   if (K.canteen && Math.abs(ny) > 0.55 && z > zb - 3.5 && z < zb + 0.5 && Math.abs(x - (KIT.xf - 7)) < 1.6) return [K.canteenMat || 'couroMarrom', 0.9, 1];
+  if (K.maewest && (z > KIT.zt - 1.7 || (front && z > KIT.zt - 8.5 && ady > 0.6 && ady < 4.6))) { const seam = front && z < KIT.zt - 1.7 && (Math.abs(ady - 2.6) < 0.08 || Math.abs((z - KIT.zt) % 1.6) < 0.08); return [K.maewest, seam ? 0.7 : 1.02, 1]; }
   // túnica: gola, distintivos, bolsos e botões
   if (K.collar && z > KIT.zt - 1.8) return [K.collar, 0.9, 1];
+  if (K.zip && front && ady < 0.16 && z > zb + 1) return ['acoGasto', ady < 0.07 ? 1.15 : 0.7, 1];
+  if (K.wrap && front && Math.abs(dy - (z - zb) * 0.32 + 1.2) < 0.12 && z > zb + 1) return [S.islandMat[0].get(isl) || 'pretoPanzer', 0.55, 1];
+  if (K.holster && Math.abs(ny) > 0.5 && dy > 0 && z > zb - 3.2 && z < zb + 0.4) return ['couroMarrom', z > zb - 0.5 ? 0.75 : 1, 1];
   if (front) {
     if (K.tabs && z > KIT.zt - 3 && z < KIT.zt - 1.8 && ady > 1.3 && ady < 2.8) return [K.tabs, Math.abs(Math.sin(ady * 9)) < 0.35 ? 0.7 : 1.1, 1];
     if (K.eagle && dy < -1.6 && dy > -4.6 && z > KIT.zt - 5.4 && z < KIT.zt - 3.6) { const u = (dy + 3.1) / 1.5, v = (z - (KIT.zt - 4.5)) / 0.9; if (Math.abs(v) < 1 - Math.abs(u) * 0.55 || (Math.abs(u) < 0.2 && v < 0.2)) return ['cinzaClaro', 1, 0.9]; }
@@ -2477,6 +2626,28 @@ function kitAt(sk, i, isl, r0, g0, b0) {
     if (K.buttons && ady < 0.35) { const k = (z - zb - 1.6) / 2.5; if (k > 0 && Math.abs(k - Math.round(k)) < 0.12 && z < KIT.zt - 1.5) return [K.buttons, 1.1, 1]; if (ady < 0.08) return [S.islandMat[0].get(isl) || 'lona', 0.65, 1]; }
   }
   return null;
+}
+// corpo mais volumoso (casacos acolchoados, jaqueta de couro, parca): empurra os vértices para fora em todos os quadros
+function applyBulk(U) {
+  const s = model.surfaces[0]; if (!S.charPos0 || !s.xyz) return;
+  s.pos.forEach((P, f) => P.set(S.charPos0[f]));
+  const bulk = U && U.kit && U.kit.bulk; S.charBulk = null;
+  if (!bulk || S.char.bulkOff) { setFrame(S.frame); return; }
+  const nX = Math.max(...s.xyz) + 1, d = new Float32Array(nX), P0 = S.charPos0[0];
+  for (let i = 0; i < s.nv; i++) {
+    const reg = REG_OF[s.island[i]]; let a = bulk[reg] || 0;
+    if (reg === 'mangas' && P0[i * 3 + 2] < 9.8) a = 0;                         // mãos ficam como estão
+    d[s.xyz[i]] = Math.max(d[s.xyz[i]], a);
+  }
+  const out = [];
+  for (let f = 0; f < s.pos.length; f++) {
+    const N = new Float32Array(nX * 3), Nf = s.nrm[f], D = new Float32Array(nX * 3);
+    for (let i = 0; i < s.nv; i++) { const x = s.xyz[i]; N[x * 3] -= Nf[i * 3]; N[x * 3 + 1] -= Nf[i * 3 + 1]; N[x * 3 + 2] -= Nf[i * 3 + 2]; }   // normais do MD2 apontam para dentro
+    for (let x = 0; x < nX; x++) { if (!d[x]) continue; const l = Math.hypot(N[x * 3], N[x * 3 + 1], N[x * 3 + 2]) || 1; for (let k = 0; k < 3; k++) D[x * 3 + k] = N[x * 3 + k] / l * d[x]; }
+    const P = s.pos[f]; for (let i = 0; i < s.nv; i++) { const x = s.xyz[i]; P[i * 3] += D[x * 3]; P[i * 3 + 1] += D[x * 3 + 1]; P[i * 3 + 2] += D[x * 3 + 2]; }
+    out.push(D);
+  }
+  S.charBulk = out; setFrame(S.frame);
 }
 let gearMesh = null, GEAR = null;
 function removeGear() { if (gearMesh) { root.remove(gearMesh); gearMesh.geometry.dispose(); } gearMesh = null; GEAR = null; }
@@ -2511,7 +2682,8 @@ async function loadCharacter(md2Buf, skinFile) {
   if (img.width < 1000) { const sc = Math.max(2, Math.round(1280 / img.width)); const c = document.createElement('canvas'); c.width = img.width * sc; c.height = img.height * sc; const x = c.getContext('2d'); x.imageSmoothingQuality = 'high'; x.drawImage(img, 0, 0, c.width, c.height); img = c; }
   await loadWeapon({ modelObj: m, md2Buf, cfgText: '', skinImages: [img], weaponName: 'personagem', skinSources: [skinFile] });
   S.mode = 'char'; document.body.dataset.mode = 'char'; S.charMD2 = md2Buf.slice(0); removeGear();
-  S.char = { gear3d: true, target: 'team', team: 'rvsf', slot: '01', nick: '', nickTeam: 'ffa', multi: false, baseName: skinFile.name };
+  S.charPos0 = model.surfaces[0].pos.map(p => p.slice()); S.charBulk = null;
+  S.char = { hq: true, skinTone: 'media', gear3d: true, target: 'team', team: 'rvsf', slot: '01', nick: '', nickTeam: 'ffa', multi: false, baseName: skinFile.name };
   S.skinFiles = ['personagem.jpg']; S.global.detail = 0.55;
   S.animIdx = Math.max(0, anims().findIndex(a => /stand/i.test(a.name)));
   updateAll(); frameCamera('orbit'); buildCharUI(); goStep(2);
@@ -2525,7 +2697,7 @@ function applyUniform(id) {
   Object.assign(S.global, { wear: 0.3, age: 0.2, dirt: 0.25, detail: 0.32 }); S.fx = { ...S.fx, cavity: 0.4, scratches: 0, rust: 0, dust: 0, burn: 0, blood: 0, ...(U.fx || {}) };
   if (U.fx && U.fx.dirt != null) S.global.dirt = U.fx.dirt;
   S.char.uniform = U.id; S.char.team = U.team; S.char.kit = S.char.kitOn !== false; S.modifiedSkins.add(0);
-  composite(0); refreshGear(); updateAll(); buildCharUI();
+  applyBulk(U); composite(0); refreshGear(); updateAll(); buildCharUI();
   toast(`Uniforme: ${U.n}`, 'ok');
 }
 function setRegion(reg, mat) {
@@ -2557,7 +2729,10 @@ function charTarget() {
 }
 function buildCharUI() {
   const box = $('#uniforms'); if (!box) return; box.innerHTML = '';
-  UNIFORMS.forEach(U => {
+  let lastGrp = null;
+  [...UNIFORMS.filter(U => U.grp === 'esp'), ...UNIFORMS.filter(U => U.grp !== 'esp')].forEach(U => {
+    const g = U.grp === 'esp' ? 'Especialistas da 2ª Guerra · conceitos novos com peças 3D' : 'Infantaria da 1ª e 2ª Guerra';
+    if (g !== lastGrp) { lastGrp = g; const h = document.createElement('div'); h.className = 'unigrp'; h.textContent = g; box.appendChild(h); }
     const b = document.createElement('button'); b.className = 'unicard' + (S.char && S.char.uniform === U.id ? ' on' : '');
     const sw = ['cabeca', 'tunica', 'calca', 'perneiras', 'botas'].map(r => { const m = MATS[U.r[r]]; return m ? `<i style="background:rgb(${m.c.map(v => v | 0)})"></i>` : ''; }).join('');
     b.innerHTML = `<div class="sw">${sw}</div><span class="tag war${U.war}">${U.war === 1 ? '1ª GUERRA' : '2ª GUERRA'} · ${U.side}</span><b>${U.n}</b><small>${U.d}</small>`;
@@ -2575,6 +2750,7 @@ function buildCharUI() {
     $('#charTargetTeam').checked = S.char.target === 'team'; $('#charTargetNick').checked = S.char.target === 'nick';
     $('#charTeam').value = S.char.team; $('#charSlot').value = S.char.slot; $('#charNick').value = S.char.nick; $('#charNickTeam').value = S.char.nickTeam; $('#charMulti').checked = S.char.multi;
     $('#charPath').textContent = charTarget();
+    $('#charHQ').checked = !!S.char.hq; $('#charTone').value = S.char.skinTone || 'media';
   }
 }
 
@@ -3074,6 +3250,8 @@ function bindUI() {
   }
   renderHuds(); $('#btnHudRestore').onclick = hudRestore;
   $('#btnBlender').onclick = exportBlender;
+  $('#charHQ').onchange = e => { if (!S.char) return; S.char.hq = e.target.checked; S.modifiedSkins.add(0); composite(0); };
+  $('#charTone').onchange = e => { if (!S.char) return; S.char.skinTone = e.target.value; S.modifiedSkins.add(0); composite(0); };
   $('#cfPublish').onclick = cfPublish;
   $('#cfZip').onclick = async () => { try { const P = await cfPackage(); download(`CUBEFORGE_${P.slug}.zip`, P.blob); $('#cfStatus').textContent = `Pacote de ${P.tamanho} baixado.`; } catch (e) { toast(e.message, 'err'); } };
   $('#sndShot').onclick = async () => { if (!S.sound) return toast('Abra uma arma primeiro', 'warn'); play((await soundPCM()).shot); };

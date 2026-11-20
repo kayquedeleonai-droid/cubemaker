@@ -191,6 +191,20 @@ export const TEX = {
     if (c < 0.07) return [150, 110, 70];
     return n > 0.62 ? [170, 196, 150] : [222, 212, 178];
   },
+  denison(x, y) {                       // bata Denison: pinceladas marrom e verde sobre areia
+    const u = x * 0.9 + y * 0.45, v = y - x * 0.25;
+    const a = fbm(u * 0.006, v * 0.02), b = fbm(u * 0.007 + 5, v * 0.022 + 3), w = 0.94 + 0.06 * (((x + y) & 3) < 2 ? 1 : -1);
+    const c = a > 0.58 ? [92, 70, 44] : b > 0.6 ? [84, 92, 56] : mix([176, 160, 118], [158, 142, 102], fbm(x * 0.03, y * 0.03));
+    return c.map(q => q * w);
+  },
+  knit(x, y, m) {                       // tricô (jérsei de lã)
+    const r = ((y % 6) + 6) % 6, k = 0.86 + 0.18 * Math.abs(Math.sin((x + (r < 3 ? 1.5 : 0)) * 1.05)) - (r === 0 ? 0.08 : 0);
+    return m.c.map(q => q * k * (0.94 + 0.12 * fbm(x * 0.05, y * 0.05)));
+  },
+  fur(x, y, m) {                        // pelo (gola de carneiro, gorro de pele)
+    const n = fbm(x * 0.12, y * 0.05), f = 0.75 + 0.5 * h2(x | 0, (y / 3) | 0) * n;
+    return m.c.map(q => q * f);
+  },
   img(x, y, m) {                        // textura importada (repete)
     const I = m.img, ix = ((Math.floor(x * m.scale) % I.w) + I.w) % I.w, iy = ((Math.floor(y * m.scale) % I.h) + I.h) % I.h, j = (iy * I.w + ix) * 4;
     return [I.data[j], I.data[j + 1], I.data[j + 2]];
@@ -273,6 +287,15 @@ const CLOTH = {
   telogreika: ['Telogreika acolchoada', [92, 94, 60], 'quilted'], perneira: ['Perneiras de lã', [128, 110, 76], 'puttee'],
   perneiraLona: ['Perneiras de lona', [156, 144, 108], 'cloth'], couroPreto: ['Couro preto', [36, 32, 30], 'leather'],
   couroMarrom: ['Couro marrom', [94, 60, 36], 'leather'], frogskinT: ['Frogskin (camuflagem)', [100, 106, 70], 'frogskin'],
+  couroCarneiro: ['Jaqueta de couro de carneiro', [108, 72, 44], 'leather'], laCarneiro: ['Lã de carneiro (gola)', [214, 198, 168], 'fur'],
+  azulRAF: ['Lã azul RAF', [88, 100, 122], 'cloth'], macacaoLW: ['Macacão de voo (Luftwaffe)', [126, 118, 92], 'cloth'],
+  pretoPanzer: ['Lã preta (Panzer)', [40, 40, 42], 'cloth'], tankerUS: ['Jaqueta de tanquista (EUA)', [146, 128, 92], 'cloth'],
+  jumpM42: ['Macacão de salto M42', [150, 138, 104], 'cloth'], jersey: ['Jérsei de lã (comando)', [54, 62, 52], 'knit'],
+  denisonT: ['Bata Denison (camuflagem)', [160, 140, 100], 'denison'], grigioVerde: ['Grigio-verde (Itália)', [108, 110, 86], 'cloth'],
+  japMostarda: ['Tipo 98 (Japão)', [150, 128, 76], 'cloth'], windjacke: ['Anoraque de montanha', [168, 162, 136], 'cloth'],
+  peleCinza: ['Pele cinza (gorro)', [124, 120, 112], 'fur'], tweed: ['Tweed (civil)', [104, 92, 74], 'cloth'],
+  amareloMae: ['Colete salva-vidas', [200, 170, 62], 'cloth'], verdeBoina: ['Boina verde (comando)', [52, 82, 52], 'knit'],
+  boinaPreta: ['Boina preta', [30, 30, 32], 'knit'], brancoCruz: ['Branco (braçadeira)', [222, 220, 210], 'cloth'],
 };
 Object.entries(CLOTH).forEach(([k, [n, c, tex]]) => { MATS[k] = { n, c, tex, cat: 'tecido', p: 'tex', wear: tex === 'leather' ? 0.5 : 0.25, wearColor: tex === 'leather' ? [120, 100, 80] : [c[0] * 1.2, c[1] * 1.2, c[2] * 1.15] }; MAT_ORDER.push(k); });
 export const CATS = [['tecido', 'Tecidos'], ['cenario', 'Cenário'], ['metal', 'Metais'], ['madeira', 'Madeiras'], ['pintura', 'Pinturas'], ['camo', 'Camuflagem'], ['detalhe', 'Detalhes'], ['minhas', 'Minhas']];
