@@ -7,6 +7,7 @@ import { ARSENAL, buildPreset, atlasCanvas, FORGE_FAMILIES, FORGE_OPTIONS, forge
 import { PROPS, PROP_CATS, propDef } from './props.js';
 import { readExternal, importParts, guessMat } from './importer.js';
 import { createScene } from './scene.js';
+import { packTexts, publishToRepo, slugify, fmtSize, BRAND } from './publish.js';
 import { buildGear, gearFrame, writePlayerMD2 } from './chargear.js';
 import { soundPreset, renderShot, renderReload, toOgg, play, soundNames, SR } from './sfx.js';
 import { parseMD3, parseMD2, buildMD3, buildMD2, computeIslands, parseCfg, encodeNormal } from './md3.js';
@@ -1353,6 +1354,54 @@ async function packageFiles() {
   }
   return out;
 }
+// ================================================================ PUBLICAR NO CUBEFORGE
+function cfKind() { return S.mode === 'prop' ? (S.prop && S.prop.pickup ? 'item' : 'mapmodel') : S.mode === 'char' ? 'char' : 'arma'; }
+function cfDefaults() {
+  const k = cfKind(), n = k === 'arma' ? ((S.preset && S.preset.n) || S.forgeName || 'Arma') : (S.prop ? S.prop.n : 'Modelo');
+  const d = k === 'arma' ? ((S.presetDef && S.presetDef.d) || '') : ((S.propDef && S.propDef.d) || '');
+  $('#cfName').value = n; $('#cfDesc').value = d; $('#cfDescEn').value = '';
+}
+function cfHowto(k) {
+  if (k === 'mapmodel') return {
+    pt: `1) Extraia o zip e copie a pasta "packages" para a pasta do AssaultCube (Documentos\\My Games\\AssaultCube\\v1.3 ou a pasta de instalação), juntando as pastas.\n2) No fim do .cfg do seu mapa (packages/maps/<mapa>.cfg), acrescente:\n   ${mapmodelLine()}\n3) No editor do jogo, mire no chão: /newent mapmodel <número da linha, contando do 0>`,
+    en: `1) Extract the zip and copy the "packages" folder into your AssaultCube folder (Documents\\My Games\\AssaultCube\\v1.3 or the install folder), merging folders.\n2) At the end of your map's .cfg (packages/maps/<map>.cfg), add:\n   ${mapmodelLine()}\n3) In the editor, aim at the floor: /newent mapmodel <line number, counting from 0>` };
+  if (k === 'item') return {
+    pt: `1) Extraia o zip e copie a pasta "packages" para Documentos\\My Games\\AssaultCube\\v1.3 (a pasta home do jogo).\n2) Entre num mapa: o item "${S.prop.pickup}" aparece com o visual novo. O efeito do item não muda.\nPara desfazer, apague packages/models/pickups/${S.prop.pickup} da pasta home.`,
+    en: `1) Extract the zip and copy the "packages" folder into Documents\\My Games\\AssaultCube\\v1.3 (the game's home folder).\n2) Join a map: the "${S.prop.pickup}" pickup shows the new look. Gameplay is unchanged.\nTo undo, delete packages/models/pickups/${S.prop.pickup} from the home folder.` };
+  return {
+    pt: `1) Faça uma cópia de segurança de packages/models/weapons/${weaponDir()} (e de packages/audio/weapon, se o pacote trouxer sons).\n2) Extraia o zip e copie a pasta "packages" para Documentos\\My Games\\AssaultCube\\v1.3 (a pasta home), juntando as pastas.\n3) Entre no jogo: a arma "${weaponDir()}" passa a usar este modelo. Para desfazer, apague os arquivos copiados da pasta home.`,
+    en: `1) Back up packages/models/weapons/${weaponDir()} (and packages/audio/weapon if the pack has sounds).\n2) Extract the zip and copy the "packages" folder into Documents\\My Games\\AssaultCube\\v1.3 (the home folder), merging folders.\n3) In game, the "${weaponDir()}" weapon now uses this model. To undo, delete the copied files from the home folder.` };
+}
+async function cfPackage() {
+  const k = cfKind();
+  if (k === 'char') throw new Error('Skins e modelo dos personagens não podem ser publicados: o modelo do jogador do AssaultCube só permite uso pessoal (Darren Pattenden).');
+  if (!model) throw new Error('Abra um modelo primeiro');
+  const nome = $('#cfName').value.trim() || 'Modelo', descricao = $('#cfDesc').value.trim() || nome, descricao_en = $('#cfDescEn').value.trim();
+  const meta = { kind: k, nome, descricao, descricao_en, anim: model.nf > 1, howto: cfHowto(k) };
+  const T = packTexts(meta), files = (await packageFiles()).filter(f => !/CREDITOS\.txt$|LEIA-ME\.txt$/.test(f.path));
+  const zip = new JSZip(), slug = slugify(nome), dir = `CUBEFORGE_${slug}/`;
+  files.forEach(f => zip.file(dir + f.path, f.data));
+  zip.file(dir + 'LEIA-ME.txt', T.pt); zip.file(dir + 'README_EN.txt', T.en); zip.file(dir + 'LICENCA.txt', T.lic);
+  const shot = dataURLtoBlob(thumbnail(960, 600, true)); zip.file(dir + 'preview.png', shot);
+  const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
+  if (blob.size > 25 * 1048576) throw new Error(`O pacote ficou com ${fmtSize(blob.size)}; o site aceita até 25 MB.`);
+  const cat = k === 'arma' ? 'armas' : 'modelos';
+  const entry = { nome, autor: $('#cfAuthor').value.trim() || 'Kayque Deleon', descricao, ...(descricao_en ? { descricao_en } : {}), arquivo: `/downloads/${cat}/${slug}.zip`, imagem: `/img/arsenal/${slug}.png`, tamanho: fmtSize(blob.size), data: new Date().toISOString().slice(0, 10), licenca: k === 'arma' ? `${BRAND} · mãos de makkE · CC BY-NC-SA 2.5` : `${BRAND} · © Kayque Deleon · uso livre no AC com crédito, sem revenda` };
+  return { blob, shot, slug, cat, entry };
+}
+async function cfPublish() {
+  const st = $('#cfStatus'), token = $('#cfToken').value.trim(), repo = $('#cfRepo').value.trim();
+  try {
+    if (!token) { $('.cfbox details').open = true; throw new Error('Cole o token do GitHub (Conexão com o GitHub)'); }
+    try { localStorage.setItem('cm_gh_token', token); localStorage.setItem('cm_gh_repo', repo); localStorage.setItem('cm_cf_author', $('#cfAuthor').value); } catch (e) { }
+    st.textContent = 'Montando o pacote…';
+    const P = await cfPackage();
+    const r = await publishToRepo({ token, repo, files: [{ path: `public/downloads/${P.cat}/${P.slug}.zip`, blob: P.blob }, { path: `public/img/arsenal/${P.slug}.png`, blob: P.shot }], entry: P.entry, cat: P.cat, onStep: t => st.textContent = t });
+    st.innerHTML = `✔ ${r.updated ? 'Atualizado' : 'Publicado'}: <b>${P.entry.nome}</b> (${P.entry.tamanho}). O site atualiza em 1–2 min: <a href="https://cubeforge.kayquedeleon.app/arsenal.html#${P.cat}" target="_blank" rel="noopener">abrir o arsenal</a> · <a href="${r.html}" target="_blank" rel="noopener">ver o commit</a>`;
+    toast('Publicado no CubeForge', 'ok');
+  } catch (e) { console.error(e); st.textContent = '✖ ' + e.message; toast(e.message, 'err'); }
+}
+
 // ================================================================ ESTÚDIO DE SOM
 const reloadKind = () => S.preset && S.preset.id === 'mg42' ? 'belt' : S.weapon === 'shotgun' ? 'shells' : S.weapon === 'sniper' && !/enfield|smle/.test((S.preset || {}).id || '') ? 'stripper' : 'mag';
 const reloadDur = () => { const c = (S.cfg.match(/md3anim\s+"gun reload"\s+\d+\s+(\d+)\s*(\d+)?/) || []); return c[1] ? Math.min(3, +c[1] / (+c[2] || S.fps || 25)) : 1.8; };
@@ -2671,6 +2720,7 @@ function goStep(n) {
   if (n > 1 && !model) { toast('Escolha uma arma primeiro', 'warn'); n = 1; }
   if (game.on) game.exit();
   S.step = n; document.body.dataset.step = n;
+  if (n === 5 && model) { const key = (S.prop && S.prop.id) || (S.preset && S.preset.id) || S.weapon; if (S._cfFor !== key) { S._cfFor = key; cfDefaults(); } }
   $('.steps button[data-step="2"]').lastChild.textContent = S.mode === 'char' ? 'Uniforme' : 'Modelagem';
   $$('.steps button').forEach(b => { const k = +b.dataset.step; b.classList.toggle('on', k === n); b.classList.toggle('done', !!model && k < n); b.disabled = k > 1 && !model; });
   $('#stepPrev').style.visibility = n > 2 ? '' : 'hidden';
@@ -2746,6 +2796,9 @@ function bindUI() {
   $('#charKit').onchange = e => { if (!S.char) return; S.char.kitOn = e.target.checked; S.char.kit = e.target.checked; S.modifiedSkins.add(0); composite(0); };
   $('#charGear').onchange = e => { if (!S.char) return; S.char.gear3d = e.target.checked; refreshGear(); updateAll(); };
   $('#charHelmet').onchange = e => { if (!S.char) return; S.char.helmet3d = e.target.value || null; refreshGear(); updateAll(); };
+  try { $('#cfToken').value = localStorage.getItem('cm_gh_token') || ''; $('#cfRepo').value = localStorage.getItem('cm_gh_repo') || $('#cfRepo').value; $('#cfAuthor').value = localStorage.getItem('cm_cf_author') || $('#cfAuthor').value; } catch (e) { }
+  $('#cfPublish').onclick = cfPublish;
+  $('#cfZip').onclick = async () => { try { const P = await cfPackage(); download(`CUBEFORGE_${P.slug}.zip`, P.blob); $('#cfStatus').textContent = `Pacote de ${P.entry.tamanho} baixado.`; } catch (e) { toast(e.message, 'err'); } };
   $('#sndShot').onclick = async () => { if (!S.sound) return toast('Abra uma arma primeiro', 'warn'); play((await soundPCM()).shot); };
   $('#sndReload').onclick = async () => { if (!S.sound) return toast('Abra uma arma primeiro', 'warn'); play((await soundPCM()).rel); };
   $('#sndReset').onclick = () => { if (S.presetDef) { S.sound.p = soundPreset(S.presetDef.slot, S.presetDef.id); buildSoundUI(); } };
@@ -2892,7 +2945,7 @@ function viewChar(v = 'front', zoom = 1) {
   if (zoom > 1) c.y += sz * 0.12;
   camera.position.copy(c).addScaledVector(f, sz * 1.25 / zoom); controls.target.copy(c); camera.lookAt(c); controls.update();
 }
-window.CM = { refreshGear, soundPCM, viewChar, toOgg, importFile, loadProp, PROPS, addPropToMap, packageFiles, startForge, forgeDef, loadCharacter, applyUniform, addInsignia, UNIFORMS, charTarget, loadPreset, ARSENAL, _i: { THREE, get meshes() { return meshes; }, camera, renderer, scene, root, grid, tagMarker, pivotMarker, controls, resize }, debugBox: () => meshes.map(m => { m.geometry.computeBoundingBox(); const b = m.geometry.boundingBox; return [m.visible, b.min.toArray().map(v => +v.toFixed(1)), b.max.toArray().map(v => +v.toFixed(1)), m.geometry.index.count, m.geometry.attributes.position.array.slice(0, 3).join(',')]; }), thumbnail, S, get model() { return model; }, get skins() { return skins; }, loadBundled, loadDemo, exportMD3, createGroup, selectIsland, assignMaterial, applyPreset, applyAnimBank, runGen, setFrame, frameCamera, setTool, parseMD3, parseMD2, undo, captureState, goStep, game, placeDecal, addPrimitive, assembleClips, interpKey };
+window.CM = { cfPackage, cfDefaults, refreshGear, soundPCM, viewChar, toOgg, importFile, loadProp, PROPS, addPropToMap, packageFiles, startForge, forgeDef, loadCharacter, applyUniform, addInsignia, UNIFORMS, charTarget, loadPreset, ARSENAL, _i: { THREE, get meshes() { return meshes; }, camera, renderer, scene, root, grid, tagMarker, pivotMarker, controls, resize }, debugBox: () => meshes.map(m => { m.geometry.computeBoundingBox(); const b = m.geometry.boundingBox; return [m.visible, b.min.toArray().map(v => +v.toFixed(1)), b.max.toArray().map(v => +v.toFixed(1)), m.geometry.index.count, m.geometry.attributes.position.array.slice(0, 3).join(',')]; }), thumbnail, S, get model() { return model; }, get skins() { return skins; }, loadBundled, loadDemo, exportMD3, createGroup, selectIsland, assignMaterial, applyPreset, applyAnimBank, runGen, setFrame, frameCamera, setTool, parseMD3, parseMD2, undo, captureState, goStep, game, placeDecal, addPrimitive, assembleClips, interpKey };
 {
   const h = location.hash.slice(1);
   if (h === 'demo') loadBundled('subgun'); else if (WEAPONS[h]) loadBundled(h);

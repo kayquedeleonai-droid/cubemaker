@@ -254,3 +254,7 @@ body.pickup .proponly #mapName,body.pickup .proponly #btnAddMap,body.pickup .pro
 #sceneView .scmain{position:relative;display:flex;flex-direction:column}
 #sceneView .scbar{height:44px;display:flex;gap:8px;align-items:center;padding:0 10px;border-top:1px solid var(--line)}
 #sceneView canvas{display:block;flex:1}
+
+body[data-mode="char"] .cfbox{display:none}
+.cfbox details{margin:6px 0}.cfbox summary{cursor:pointer;color:var(--muted);font-size:12px}
+.cfbox textarea,.cfbox input{width:100%}

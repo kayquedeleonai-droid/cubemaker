@@ -12,7 +12,7 @@
 </head>
 <body data-step="1">
 <header>
-  <div class="logo"><svg viewBox="0 0 32 32" width="26" height="26"><path d="M16 4l11 6.5v11L16 28 5 21.5v-11z" fill="none" stroke="currentColor" stroke-width="2.4"/><path d="M5 10.5l11 6.5 11-6.5M16 17v11" stroke="currentColor" stroke-width="2" fill="none"/></svg><b>CUBE MAKER</b><span>v1.4</span></div>
+  <div class="logo"><svg viewBox="0 0 32 32" width="26" height="26"><path d="M16 4l11 6.5v11L16 28 5 21.5v-11z" fill="none" stroke="currentColor" stroke-width="2.4"/><path d="M5 10.5l11 6.5 11-6.5M16 17v11" stroke="currentColor" stroke-width="2" fill="none"/></svg><b>CUBE MAKER</b><span>v1.5</span></div>
   <nav class="steps">
     <button data-step="1"><i>1</i>Arma</button>
     <button data-step="2"><i>2</i>Modelagem</button>
@@ -401,6 +401,21 @@
           <button class="btn sm danger" id="btnRestore">Restaurar original</button>
         </div>
         <p class="hint" id="gameLast">Conecte <code>Documentos\My Games\AssaultCube\v1.3</code>. Backups em <code>cubemaker_backup</code>.</p>
+      </section>
+      <section class="cfbox">
+        <h3>Publicar no CubeForge</h3>
+        <p class="hint">Empacota o modelo com LEIA-ME (PT/EN), licença <b>CUBEFORGE Model by Kayque Deleon</b> e print, e publica no arsenal do <a href="https://cubeforge.kayquedeleon.app/arsenal.html" target="_blank" rel="noopener">cubeforge.kayquedeleon.app</a> num único commit. O site atualiza sozinho em 1–2 minutos.</p>
+        <div class="field"><label>Nome</label><input id="cfName" spellcheck="false"></div>
+        <div class="field"><label>Descrição</label><textarea id="cfDesc" rows="2"></textarea></div>
+        <div class="field"><label>Descrição em inglês (opcional)</label><textarea id="cfDescEn" rows="2"></textarea></div>
+        <div class="field row"><label style="width:60px">Autor</label><input id="cfAuthor" value="Kayque Deleon" spellcheck="false"></div>
+        <details><summary>Conexão com o GitHub</summary>
+          <div class="field"><label>Repositório</label><input id="cfRepo" value="kayquedeleonai-droid/cubeforge" spellcheck="false"></div>
+          <div class="field"><label>Token do GitHub (fine-grained, só este repositório, "Contents: Read and write")</label><input id="cfToken" type="password" placeholder="github_pat_…" autocomplete="off"></div>
+          <p class="hint">O token fica só neste navegador. Crie em GitHub → Settings → Developer settings → Fine-grained tokens.</p>
+        </details>
+        <div class="btnrow"><button class="btn primary" id="cfPublish">Publicar no CubeForge</button><button class="btn sm" id="cfZip">Só baixar o pacote</button></div>
+        <p class="hint" id="cfStatus"></p>
       </section>
       <section>
         <h3>Arquivos</h3>
