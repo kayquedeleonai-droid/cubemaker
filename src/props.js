@@ -3,6 +3,7 @@
 import * as THREE from 'three';
 import { B, C, L, E, SP, T, SG, LO, W, TU, PI, helix, starPts, circlePts, roundRect, xform, TRS } from './geo.js';
 import { HD } from './arsenal_hd.js';
+import { BOATS } from './boats.js';
 
 const D2R = Math.PI / 180;
 const V3 = (x, y, z) => new THREE.Vector3(x, y, z);
@@ -304,7 +305,7 @@ function tank(o) {
 }
 
 // ---------------------------------------------------------------- catálogo
-export const PROP_CATS = { item: 'Itens do jogo (substituem os do AC)', fort: 'Fortificações', veic: 'Veículos e tanques', aviao: 'Aviões', art: 'Artilharia e armas pesadas', obj: 'Objetos e suprimentos', cen: 'Cenário e construções', sold: 'Soldados caídos' };
+export const PROP_CATS = { item: 'Itens do jogo (substituem os do AC)', fort: 'Fortificações', veic: 'Veículos e tanques', aviao: 'Aviões', naval: 'Barcos do Dia D (Omaha)', art: 'Artilharia e armas pesadas', obj: 'Objetos e suprimentos', cen: 'Cenário e construções', sold: 'Soldados caídos' };
 const soldierVars = (pose, uni) => ({ pose: { n: 'Pose', o: POSE_OPTS, v: pose }, uni: { n: 'Uniforme', o: UNIFORM_OPTS, v: uni } });
 
 const ESC = { n: 'Tamanho no jogo', o: [['1', 'Real'], ['1.5', '1,5×'], ['2', '2×'], ['3', '3×']], v: '1.5' };
@@ -736,5 +737,6 @@ export const PROPS = [
   { id: 'corpo_coberto', cat: 'sold', war: 0, n: 'Corpo coberto', d: 'Soldado coberto por um poncho, só as botas à mostra.', mm: '0 1 0 0', vars: { cor: { n: 'Poncho', o: [['lonaVerde', 'Verde-oliva'], ['splinter', 'Zeltbahn (splinter)'], ['lona', 'Cáqui'], ['branco', 'Lençol branco']], v: 'lonaVerde' }, uni: { n: 'Botas', o: [['couroMarrom', 'Marrom'], ['couroPreto', 'Pretas']], v: 'couroMarrom' } },
     build: v => ({ parts: [LO(null, v.cor, [{ y: -800, w: 500, ht: 30, hb: 5 }, { y: -650, w: 760, ht: 260, hb: 5 }, { y: 100, w: 820, ht: 230, hb: 5 }, { y: 500, w: 640, ht: 160, hb: 5 }, { y: 820, w: 560, ht: 300, hb: 5 }, { y: 1000, w: 400, ht: 20, hb: 5 }], [0, 0, 0], { seg: 18, cell: 'poncho' }),
       ...[-1, 1].map(s => B(null, v.uni, [110, 120, 280], [s * 140, -930, 140], { bev: 20, rot: [10, s * 15, 0] }))] }) },
+  ...BOATS,
 ];
 export function propDef(id) { return PROPS.find(p => p.id === id); }

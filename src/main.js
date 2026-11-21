@@ -19,7 +19,7 @@ import { MATS, MAT_ORDER, fbm, TEX, CATS, registerImageTexture } from './materia
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const D2R = Math.PI / 180;
-const VERSION = '1.8.0';
+const VERSION = '1.9.0';
 
 // ---------------------------------------------------------------- estado
 let model = null;          // MD3 parseado
